@@ -216,7 +216,7 @@ Class | Method | HTTP request | Description
 *UsageMeteringApi* | [**GetTracingWithoutLimits**](docs/UsageMeteringApi.md#gettracingwithoutlimits) | **Get** /api/v1/usage/tracing-without-limits | Get hourly usage for tracing without limits
 *UsageMeteringApi* | [**GetUsageAnalyzedLogs**](docs/UsageMeteringApi.md#getusageanalyzedlogs) | **Get** /api/v1/usage/analyzed_logs | Get hourly usage for analyzed logs
 *UsageMeteringApi* | [**GetUsageAttribution**](docs/UsageMeteringApi.md#getusageattribution) | **Get** /api/v1/usage/attribution | Get Usage Attribution
-*UsageMeteringApi* | [**GetUsageBillableSummary**](docs/UsageMeteringApi.md#getusagebillablesummary) | **Get** /api/v1/usage/billable-summary | Get billable usage across your multi-org account
+*UsageMeteringApi* | [**GetUsageBillableSummary**](docs/UsageMeteringApi.md#getusagebillablesummary) | **Get** /api/v1/usage/billable-summary | Get billable usage across your account
 *UsageMeteringApi* | [**GetUsageFargate**](docs/UsageMeteringApi.md#getusagefargate) | **Get** /api/v1/usage/fargate | Get hourly usage for Fargate
 *UsageMeteringApi* | [**GetUsageHosts**](docs/UsageMeteringApi.md#getusagehosts) | **Get** /api/v1/usage/hosts | Get hourly usage for hosts and containers
 *UsageMeteringApi* | [**GetUsageIndexedSpans**](docs/UsageMeteringApi.md#getusageindexedspans) | **Get** /api/v1/usage/indexed-spans | Get hourly usage for indexed spans
@@ -315,6 +315,15 @@ Class | Method | HTTP request | Description
  - [EventStreamWidgetDefinitionType](docs/EventStreamWidgetDefinitionType.md)
  - [EventTimelineWidgetDefinition](docs/EventTimelineWidgetDefinition.md)
  - [EventTimelineWidgetDefinitionType](docs/EventTimelineWidgetDefinitionType.md)
+ - [FormulaAndFunctionMetricDataSource](docs/FormulaAndFunctionMetricDataSource.md)
+ - [FormulaAndFunctionOrder](docs/FormulaAndFunctionOrder.md)
+ - [FormulaAndFunctionQueryDefinition](docs/FormulaAndFunctionQueryDefinition.md)
+ - [FormulaAndFunctionResponseFormat](docs/FormulaAndFunctionResponseFormat.md)
+ - [FormulaAndFunctionsAggregation](docs/FormulaAndFunctionsAggregation.md)
+ - [FormulaAndFunctionsEventAggregation](docs/FormulaAndFunctionsEventAggregation.md)
+ - [FormulaAndFunctionsEventsDataSource](docs/FormulaAndFunctionsEventsDataSource.md)
+ - [FormulaAndFunctionsEventsType](docs/FormulaAndFunctionsEventsType.md)
+ - [FormulaAndFunctionsProcessQueryDataSource](docs/FormulaAndFunctionsProcessQueryDataSource.md)
  - [FreeTextWidgetDefinition](docs/FreeTextWidgetDefinition.md)
  - [FreeTextWidgetDefinitionType](docs/FreeTextWidgetDefinitionType.md)
  - [GCPAccount](docs/GCPAccount.md)
@@ -565,6 +574,13 @@ Class | Method | HTTP request | Description
  - [TableWidgetRequest](docs/TableWidgetRequest.md)
  - [TagToHosts](docs/TagToHosts.md)
  - [TargetFormatType](docs/TargetFormatType.md)
+ - [TimeSeriesFormulaAndFunctionMetricQueryDefinition](docs/TimeSeriesFormulaAndFunctionMetricQueryDefinition.md)
+ - [TimeSeriesFormulaAndFunctionProcessQueryDefinition](docs/TimeSeriesFormulaAndFunctionProcessQueryDefinition.md)
+ - [TimeSeriesFormulasAndFunctionEventQueryDefinition](docs/TimeSeriesFormulasAndFunctionEventQueryDefinition.md)
+ - [TimeSeriesFormulasAndFunctionEventQueryDefinitionCompute](docs/TimeSeriesFormulasAndFunctionEventQueryDefinitionCompute.md)
+ - [TimeSeriesFormulasAndFunctionEventQueryDefinitionGroupBy](docs/TimeSeriesFormulasAndFunctionEventQueryDefinitionGroupBy.md)
+ - [TimeSeriesFormulasAndFunctionEventQueryDefinitionGroupBySort](docs/TimeSeriesFormulasAndFunctionEventQueryDefinitionGroupBySort.md)
+ - [TimeSeriesFormulasAndFunctionEventQueryDefinitionSearch](docs/TimeSeriesFormulasAndFunctionEventQueryDefinitionSearch.md)
  - [TimeseriesWidgetDefinition](docs/TimeseriesWidgetDefinition.md)
  - [TimeseriesWidgetDefinitionType](docs/TimeseriesWidgetDefinitionType.md)
  - [TimeseriesWidgetRequest](docs/TimeseriesWidgetRequest.md)
@@ -660,6 +676,8 @@ Class | Method | HTTP request | Description
  - [WidgetEvent](docs/WidgetEvent.md)
  - [WidgetEventSize](docs/WidgetEventSize.md)
  - [WidgetFieldSort](docs/WidgetFieldSort.md)
+ - [WidgetFormula](docs/WidgetFormula.md)
+ - [WidgetFormulaLimit](docs/WidgetFormulaLimit.md)
  - [WidgetGrouping](docs/WidgetGrouping.md)
  - [WidgetImageSizing](docs/WidgetImageSizing.md)
  - [WidgetLayout](docs/WidgetLayout.md)
