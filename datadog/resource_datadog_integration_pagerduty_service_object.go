@@ -1,8 +1,6 @@
 package datadog
 
 import (
-	"strings"
-
 	datadogV1 "github.com/DataDog/datadog-api-client-go/api/v1/datadog"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 )
@@ -13,7 +11,6 @@ func resourceDatadogIntegrationPagerdutySO() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceDatadogIntegrationPagerdutySOCreate,
 		Read:   resourceDatadogIntegrationPagerdutySORead,
-		Exists: resourceDatadogIntegrationPagerdutySOExists,
 		Update: resourceDatadogIntegrationPagerdutySOUpdate,
 		Delete: resourceDatadogIntegrationPagerdutySODelete,
 		// since the API never returns service_key, it's impossible to meaningfully import resources
@@ -78,8 +75,12 @@ func resourceDatadogIntegrationPagerdutySORead(d *schema.ResourceData, meta inte
 	datadogClientV1 := providerConf.DatadogClientV1
 	authV1 := providerConf.AuthV1
 
-	so, _, err := datadogClientV1.PagerDutyIntegrationApi.GetPagerDutyIntegrationService(authV1, d.Id()).Execute()
+	so, httpresp, err := datadogClientV1.PagerDutyIntegrationApi.GetPagerDutyIntegrationService(authV1, d.Id()).Execute()
 	if err != nil {
+		if httpresp != nil && httpresp.StatusCode == 404 {
+			d.SetId("")
+			return nil
+		}
 		return translateClientError(err, "error getting PagerDuty integration service")
 	}
 
@@ -91,22 +92,6 @@ func resourceDatadogIntegrationPagerdutySORead(d *schema.ResourceData, meta inte
 	}
 
 	return nil
-}
-
-func resourceDatadogIntegrationPagerdutySOExists(d *schema.ResourceData, meta interface{}) (b bool, e error) {
-	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
-
-	_, _, err := datadogClientV1.PagerDutyIntegrationApi.GetPagerDutyIntegrationService(authV1, d.Id()).Execute()
-	if err != nil {
-		if strings.Contains(err.Error(), "404 Not Found") {
-			return false, nil
-		}
-		return false, translateClientError(err, "error checking PagerDuty integration service exists")
-	}
-
-	return true, nil
 }
 
 func resourceDatadogIntegrationPagerdutySOUpdate(d *schema.ResourceData, meta interface{}) error {

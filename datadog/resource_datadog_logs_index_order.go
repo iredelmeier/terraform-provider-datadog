@@ -11,7 +11,6 @@ func resourceDatadogLogsIndexOrder() *schema.Resource {
 		Update: resourceDatadogLogsIndexOrderUpdate,
 		Read:   resourceDatadogLogsIndexOrderRead,
 		Delete: resourceDatadogLogsIndexOrderDelete,
-		Exists: resourceDatadogLogsIndexOrderExists,
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
 		},
@@ -68,8 +67,4 @@ func resourceDatadogLogsIndexOrderRead(d *schema.ResourceData, meta interface{})
 
 func resourceDatadogLogsIndexOrderDelete(d *schema.ResourceData, meta interface{}) error {
 	return nil
-}
-
-func resourceDatadogLogsIndexOrderExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	return true, nil
 }

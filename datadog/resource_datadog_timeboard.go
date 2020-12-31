@@ -420,7 +420,6 @@ func resourceDatadogTimeboard() *schema.Resource {
 		Update:             resourceDatadogTimeboardUpdate,
 		Read:               resourceDatadogTimeboardRead,
 		Delete:             resourceDatadogTimeboardDelete,
-		Exists:             resourceDatadogTimeboardExists,
 		Importer: &schema.ResourceImporter{
 			State: resourceDatadogTimeboardImport,
 		},
@@ -1124,7 +1123,11 @@ func resourceDatadogTimeboardRead(d *schema.ResourceData, meta interface{}) erro
 	client := providerConf.CommunityClient
 	timeboard, err := client.GetDashboard(id)
 	if err != nil {
-		return err
+		if strings.Contains(err.Error(), "404 Not Found") {
+			d.SetId("")
+			return nil
+		}
+		return translateClientError(err, "error getting timeboard")
 	}
 	log.Printf("[DataDog] timeboard: %v", pretty.Sprint(timeboard))
 	if err := d.Set("title", timeboard.GetTitle()); err != nil {
@@ -1184,20 +1187,4 @@ func resourceDatadogTimeboardImport(d *schema.ResourceData, meta interface{}) ([
 		return nil, err
 	}
 	return []*schema.ResourceData{d}, nil
-}
-
-func resourceDatadogTimeboardExists(d *schema.ResourceData, meta interface{}) (b bool, e error) {
-	id, err := strconv.Atoi(d.Id())
-	if err != nil {
-		return false, err
-	}
-	providerConf := meta.(*ProviderConfiguration)
-	client := providerConf.CommunityClient
-	if _, err = client.GetDashboard(id); err != nil {
-		if strings.Contains(err.Error(), "404 Not Found") {
-			return false, nil
-		}
-		return false, translateClientError(err, "error checking timeboard exists")
-	}
-	return true, nil
 }
