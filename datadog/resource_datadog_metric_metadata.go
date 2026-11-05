@@ -5,7 +5,8 @@ import (
 
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 
-	datadogV1 "github.com/DataDog/datadog-api-client-go/api/v1/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -21,64 +22,77 @@ func resourceDatadogMetricMetadata() *schema.Resource {
 			StateContext: schema.ImportStatePassthroughContext,
 		},
 
-		Schema: map[string]*schema.Schema{
-			"metric": {
-				Description: "The name of the metric.",
-				Type:        schema.TypeString,
-				Required:    true,
-			},
-			"type": {
-				Description: "Type of the metric.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
-			"description": {
-				Description: "A description of the metric.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
-			"short_name": {
-				Description: "A short name of the metric.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
-			"unit": {
-				Description: "Primary unit of the metric such as `byte` or `operation`.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
-			"per_unit": {
-				Description: "Per unit of the metric such as `second` in `bytes per second`.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
-			"statsd_interval": {
-				Description: "If applicable, statsd flush interval in seconds for the metric.",
-				Type:        schema.TypeInt,
-				Optional:    true,
-			},
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"metric": {
+					Description: "The name of the metric.",
+					Type:        schema.TypeString,
+					Required:    true,
+					StateFunc: func(val any) string {
+						return utils.NormMetricNameParse(val.(string))
+					},
+				},
+				"type": {
+					Description: "Metric type such as `count`, `distribution`, `gauge`, or `rate`.",
+					Type:        schema.TypeString,
+					Optional:    true,
+				},
+				"description": {
+					Description: "A description of the metric.",
+					Type:        schema.TypeString,
+					Optional:    true,
+				},
+				"short_name": {
+					Description: "A short name of the metric.",
+					Type:        schema.TypeString,
+					Optional:    true,
+				},
+				"unit": {
+					Description: "Primary unit of the metric such as `byte` or `operation`. For a list of allowed units, refer to [Datadog metric unit documentation](https://docs.datadoghq.com/metrics/units/#unit-list).",
+					Type:        schema.TypeString,
+					Optional:    true,
+				},
+				"per_unit": {
+					Description: "Per unit of the metric such as `second` in `bytes per second`.",
+					Type:        schema.TypeString,
+					Optional:    true,
+				},
+				"statsd_interval": {
+					Description: "If applicable, statsd flush interval in seconds for the metric.",
+					Type:        schema.TypeInt,
+					Optional:    true,
+				},
+			}
 		},
 	}
 }
 
 func buildMetricMetadataStruct(d *schema.ResourceData) (string, *datadogV1.MetricMetadata) {
 	return d.Get("metric").(string), &datadogV1.MetricMetadata{
-		Type:           datadogV1.PtrString(d.Get("type").(string)),
-		Description:    datadogV1.PtrString(d.Get("description").(string)),
-		ShortName:      datadogV1.PtrString(d.Get("short_name").(string)),
-		Unit:           datadogV1.PtrString(d.Get("unit").(string)),
-		PerUnit:        datadogV1.PtrString(d.Get("per_unit").(string)),
-		StatsdInterval: datadogV1.PtrInt64(int64(d.Get("statsd_interval").(int))),
+		Type:           datadog.PtrString(d.Get("type").(string)),
+		Description:    datadog.PtrString(d.Get("description").(string)),
+		ShortName:      datadog.PtrString(d.Get("short_name").(string)),
+		Unit:           datadog.PtrString(d.Get("unit").(string)),
+		PerUnit:        datadog.PtrString(d.Get("per_unit").(string)),
+		StatsdInterval: datadog.PtrInt64(int64(d.Get("statsd_interval").(int))),
 	}
 }
 
 func resourceDatadogMetricMetadataCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	id, m := buildMetricMetadataStruct(d)
-	createdMetadata, httpResponse, err := datadogClientV1.MetricsApi.UpdateMetricMetadata(authV1, id, *m)
+
+	// The Datadog API returns type `distribution` for distribution metrics only when a feature flag is enabled.
+	// The API currently only partially supports recieving the distribution type in the request payload, so we skip
+	// sending the type to avoid a 400 error. For users without the feature flag, this shouldn't affect anything.
+	if m.GetType() == "distribution" {
+		m.SetType("")
+	}
+
+	createdMetadata, httpResponse, err := apiInstances.GetMetricsApiV1().UpdateMetricMetadata(auth, id, *m)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error creating metric metadata")
 	}
@@ -92,6 +106,16 @@ func resourceDatadogMetricMetadataCreate(ctx context.Context, d *schema.Resource
 }
 
 func updateMetricMetadataState(d *schema.ResourceData, metadata *datadogV1.MetricMetadata) diag.Diagnostics {
+	// GetMetricMetadata now reliably reports `type` for distribution metrics,
+	// so we always trust the API response here.
+	// (Previously this preserved whatever `type` was already in state whenever
+	// config had `type = "distribution"` set and the API echoed the same value,
+	// as a guard against older backend behavior where GET rarely confirmed
+	// `distribution`. That guard is what caused a `datadog_metric_metadata`
+	// resource for a distribution metric to plan a `gauge -> distribution`
+	// change forever, since Create/Update's own mutate-response for `type`
+	// remains unreliable and this Read path was the only thing that could
+	// ever correct it.)
 	if err := d.Set("type", metadata.GetType()); err != nil {
 		return diag.FromErr(err)
 	}
@@ -107,21 +131,26 @@ func updateMetricMetadataState(d *schema.ResourceData, metadata *datadogV1.Metri
 	if err := d.Set("per_unit", metadata.GetPerUnit()); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("statsd_interval", metadata.GetStatsdInterval()); err != nil {
+	if v, ok := metadata.GetStatsdIntervalOk(); ok {
+		if err := d.Set("statsd_interval", *v); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+	// This is a workaround to ensure the metric name is set in the state as the metric name not returned in the API response
+	if err := d.Set("metric", d.Id()); err != nil {
 		return diag.FromErr(err)
 	}
-
 	return nil
 }
 
 func resourceDatadogMetricMetadataRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	id := d.Id()
 
-	m, httpresp, err := datadogClientV1.MetricsApi.GetMetricMetadata(authV1, id)
+	m, httpresp, err := apiInstances.GetMetricsApiV1().GetMetricMetadata(auth, id)
 	if err != nil {
 		if httpresp != nil && httpresp.StatusCode == 404 {
 			d.SetId("")
@@ -137,13 +166,16 @@ func resourceDatadogMetricMetadataRead(ctx context.Context, d *schema.ResourceDa
 
 func resourceDatadogMetricMetadataUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	m := &datadogV1.MetricMetadata{}
 	id := d.Get("metric").(string)
 
-	if attr, ok := d.GetOk("type"); ok {
+	// The Datadog API returns type `distribution` for distribution metrics only when a feature flag is enabled.
+	// The API currently only partially supports recieving the distribution type in the request payload, so we skip
+	// sending the type to avoid a 400 error. For users without the feature flag, this shouldn't affect anything.
+	if attr, ok := d.GetOk("type"); ok && attr.(string) != "distribution" {
 		m.SetType(attr.(string))
 	}
 	if attr, ok := d.GetOk("description"); ok {
@@ -162,7 +194,7 @@ func resourceDatadogMetricMetadataUpdate(ctx context.Context, d *schema.Resource
 		m.SetStatsdInterval(int64(attr.(int)))
 	}
 
-	updatedMetadata, httpResponse, err := datadogClientV1.MetricsApi.UpdateMetricMetadata(authV1, id, *m)
+	updatedMetadata, httpResponse, err := apiInstances.GetMetricsApiV1().UpdateMetricMetadata(auth, id, *m)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error updating metric metadata")
 	}

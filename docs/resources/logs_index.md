@@ -3,13 +3,12 @@
 page_title: "datadog_logs_index Resource - terraform-provider-datadog"
 subcategory: ""
 description: |-
-  Provides a Datadog Logs Index API resource. This can be used to create and manage Datadog logs indexes.Note: It is not possible to delete logs indexes through Terraform, so an index remains in your account after the resource is removed from your terraform config. Reach out to support to delete a logs index.
+  Provides a Datadog Logs Index API resource. This can be used to create and manage Datadog logs indexes.
 ---
 
 # datadog_logs_index (Resource)
 
-Provides a Datadog Logs Index API resource. This can be used to create and manage Datadog logs indexes.  
-**Note:** It is not possible to delete logs indexes through Terraform, so an index remains in your account after the resource is removed from your terraform config. Reach out to support to delete a logs index.
+Provides a Datadog Logs Index API resource. This can be used to create and manage Datadog logs indexes.
 
 ## Example Usage
 
@@ -17,9 +16,15 @@ Provides a Datadog Logs Index API resource. This can be used to create and manag
 # A sample Datadog logs index resource definition.
 
 resource "datadog_logs_index" "sample_index" {
-  name           = "your index"
-  daily_limit    = 200000
-  retention_days = 7
+  name        = "your-index"
+  daily_limit = 200000
+  daily_limit_reset {
+    reset_time       = "14:00"
+    reset_utc_offset = "+02:00"
+  }
+  daily_limit_warning_threshold_percentage = 50
+  retention_days                           = 7
+  flex_retention_days                      = 180
   filter {
     query = "*"
   }
@@ -39,6 +44,7 @@ resource "datadog_logs_index" "sample_index" {
       sample_rate = 1.0
     }
   }
+  tags = ["team:backend", "env:production"]
 }
 ```
 
@@ -47,26 +53,39 @@ resource "datadog_logs_index" "sample_index" {
 
 ### Required
 
-- **filter** (Block List, Min: 1, Max: 1) Logs filter (see [below for nested schema](#nestedblock--filter))
-- **name** (String) The name of the index.
+- `filter` (Block List, Min: 1, Max: 1) Logs filter (see [below for nested schema](#nestedblock--filter))
+- `name` (String) The name of the index. Index names cannot be modified after creation. If this value is changed, a new index will be created.
 
 ### Optional
 
-- **daily_limit** (Number) The number of log events you can send in this index per day before you are rate-limited.
-- **disable_daily_limit** (Boolean) If true, sets the daily_limit value to null and the index is not limited on a daily basis (any specified daily_limit value in the request is ignored). If false or omitted, the index's current daily_limit is maintained.
-- **exclusion_filter** (Block List) List of exclusion filters. (see [below for nested schema](#nestedblock--exclusion_filter))
-- **retention_days** (Number) The number of days before logs are deleted from this index.
+- `daily_limit` (Number) The number of log events you can send in this index per day before you are rate-limited.
+- `daily_limit_reset` (Block List, Max: 1) Object containing options to override the default daily limit reset time. (see [below for nested schema](#nestedblock--daily_limit_reset))
+- `daily_limit_warning_threshold_percentage` (Number) A percentage threshold of the daily quota at which a Datadog warning event is generated.
+- `disable_daily_limit` (Boolean) If true, disables the daily limit and sets `daily_limit` to null. If false, enables the daily limit. When creating an index, if this attribute is omitted, the daily limit is enabled by default. When updating an index, if this attribute is omitted, the existing value is preserved. Providing a `daily_limit` value does not re-enable the limit if it was previously disabled unless `disable_daily_limit` is explicitly set to false.
+- `exclusion_filter` (Block List) List of exclusion filters. (see [below for nested schema](#nestedblock--exclusion_filter))
+- `flex_retention_days` (Number) The total number of days logs are stored in Standard and Flex Tier before being deleted from the index.
+- `retention_days` (Number) The number of days logs are stored in Standard Tier before aging into the Flex Tier or being deleted from the index.
+- `tags` (Set of String) A list of tags for this index. Tags must be in `key:value` format. If default tags are present at the provider level, they will be added to this resource.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
 
 <a id="nestedblock--filter"></a>
 ### Nested Schema for `filter`
 
 Required:
 
-- **query** (String) Logs filter criteria. Only logs matching this filter criteria are considered for this index.
+- `query` (String) Logs filter criteria. Only logs matching this filter criteria are considered for this index.
+
+
+<a id="nestedblock--daily_limit_reset"></a>
+### Nested Schema for `daily_limit_reset`
+
+Required:
+
+- `reset_time` (String) String in `HH:00` format representing the time of day the daily limit should be reset. The hours must be between 00 and 23 (inclusive).
+- `reset_utc_offset` (String) String in `(-|+)HH:00` format representing the UTC offset to apply to the given reset time. The hours must be between -12 and +14 (inclusive).
 
 
 <a id="nestedblock--exclusion_filter"></a>
@@ -74,21 +93,24 @@ Required:
 
 Optional:
 
-- **filter** (Block List) (see [below for nested schema](#nestedblock--exclusion_filter--filter))
-- **is_enabled** (Boolean) A boolean stating if the exclusion is active or not.
-- **name** (String) The name of the exclusion filter.
+- `filter` (Block List) (see [below for nested schema](#nestedblock--exclusion_filter--filter))
+- `is_enabled` (Boolean) A boolean stating if the exclusion is active or not.
+- `name` (String) The name of the exclusion filter.
 
 <a id="nestedblock--exclusion_filter--filter"></a>
 ### Nested Schema for `exclusion_filter.filter`
 
 Optional:
 
-- **query** (String) Only logs matching the filter criteria and the query of the parent index will be considered for this exclusion filter.
-- **sample_rate** (Number) The fraction of logs excluded by the exclusion filter, when active.
+- `query` (String) Only logs matching the filter criteria and the query of the parent index will be considered for this exclusion filter.
+- `sample_attribute` (String) The log attribute used as the sampling key. When present, logs sharing the same value are excluded or kept together at the configured sample rate (a single attribute path, e.g. `@lambda.request_id`).
+- `sample_rate` (Number) The fraction of logs excluded by the exclusion filter, when active.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 terraform import <datadog_logs_index.name> <indexName>

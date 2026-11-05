@@ -15,11 +15,9 @@ Provides a Datadog Logs Index API resource. This can be used to manage the order
 ```terraform
 resource "datadog_logs_index_order" "sample_index_order" {
   name = "sample_index_order"
-  depends_on = [
-    "datadog_logs_index.sample_index"
-  ]
+
   indexes = [
-    "${datadog_logs_index.sample_index.id}"
+    datadog_logs_index.sample_index.id
   ]
 }
 ```
@@ -29,18 +27,24 @@ resource "datadog_logs_index_order" "sample_index_order" {
 
 ### Required
 
-- **indexes** (List of String) The index resource list. Logs are tested against the query filter of each index one by one following the order of the list.
-- **name** (String) The unique name of the index order resource.
+- `indexes` (List of String) The index resource list. Logs are tested against the query filter of each index one by one following the order of the list.
+
+### Optional
+
+- `name` (String) The unique name of the index order resource.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
 
 ## Import
 
 Import is supported using the following syntax:
 
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
 ```shell
 # The Datadog Terraform Provider does not support the creation and deletion of index orders. There must be at most one `datadog_logs_index_order` resource
+# `<name>` can be whatever you specify in your code. Datadog does not store the name on the server.
 terraform import <datadog_logs_index_order.name> <name>
 ```

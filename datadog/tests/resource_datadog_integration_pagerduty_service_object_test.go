@@ -6,12 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 // We're not testing for schedules because Datadog actively verifies it with Pagerduty
 
 func TestAccDatadogIntegrationPagerdutyServiceObject_Basic(t *testing.T) {
+	t.Parallel()
 	ctx, accProviders := testAccProviders(context.Background(), t)
 	serviceName := strings.ReplaceAll(uniqueEntityName(ctx, t), "-", "_")
 	accProvider := testAccProvider(t, accProviders)
@@ -28,7 +29,7 @@ func TestAccDatadogIntegrationPagerdutyServiceObject_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"datadog_integration_pagerduty.foo", "subdomain", "testdomain"),
 					resource.TestCheckResourceAttr(
-						"datadog_integration_pagerduty.foo", "api_token", "*****"),
+						"datadog_integration_pagerduty.foo", "api_token", "********************"),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_pagerduty.foo", "schedules.0", "https://ddog.pagerduty.com/schedules/X123VF"),
 					resource.TestCheckResourceAttr(
@@ -68,7 +69,7 @@ func testAccCheckDatadogIntegrationPagerdutyServiceObjectConfig(uniq string) str
 
   schedules = ["https://ddog.pagerduty.com/schedules/X123VF"]
   subdomain = "testdomain"
-  api_token = "*****"
+  api_token = "********************"
  }
 
  resource "datadog_integration_pagerduty_service_object" "testing_foo" {
@@ -92,7 +93,7 @@ func testAccCheckDatadogIntegrationPagerdutyServiceObjectUpdatedConfig(uniq stri
 
   schedules = ["https://ddog.pagerduty.com/schedules/X123VF"]
   subdomain = "testdomain"
-  api_token = "*****"
+  api_token = "********************"
  }
 
  resource "datadog_integration_pagerduty_service_object" "testing_foo" {

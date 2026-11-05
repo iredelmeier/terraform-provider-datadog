@@ -5,7 +5,7 @@ import (
 
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 
-	datadogV1 "github.com/DataDog/datadog-api-client-go/api/v1/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -20,12 +20,14 @@ func resourceDatadogLogsIntegrationPipeline() *schema.Resource {
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
-		Schema: map[string]*schema.Schema{
-			"is_enabled": {
-				Description: "Boolean value to enable your pipeline.",
-				Type:        schema.TypeBool,
-				Optional:    true,
-			},
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"is_enabled": {
+					Description: "Boolean value to enable your pipeline.",
+					Type:        schema.TypeBool,
+					Optional:    true,
+				},
+			}
 		},
 	}
 }
@@ -43,18 +45,16 @@ func updateLogsIntegrationPipelineState(d *schema.ResourceData, pipeline *datado
 
 func resourceDatadogLogsIntegrationPipelineRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
-	ddPipeline, httpresp, err := datadogClientV1.LogsPipelinesApi.GetLogsPipeline(authV1, d.Id())
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
+	ddPipeline, httpresp, err := apiInstances.GetLogsPipelinesApiV1().
+		GetLogsPipeline(auth, d.Id())
 	if err != nil {
 		if httpresp != nil && httpresp.StatusCode == 400 {
 			d.SetId("")
 			return nil
 		}
 		return utils.TranslateClientErrorDiag(err, httpresp, "error getting logs integration pipeline")
-	}
-	if err := utils.CheckForUnparsed(ddPipeline); err != nil {
-		return diag.FromErr(err)
 	}
 	if !ddPipeline.GetIsReadOnly() {
 		d.SetId("")
@@ -67,14 +67,12 @@ func resourceDatadogLogsIntegrationPipelineUpdate(ctx context.Context, d *schema
 	var ddPipeline datadogV1.LogsPipeline
 	ddPipeline.SetIsEnabled(d.Get("is_enabled").(bool))
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
-	updatedPipeline, httpResponse, err := datadogClientV1.LogsPipelinesApi.UpdateLogsPipeline(authV1, d.Id(), ddPipeline)
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
+	updatedPipeline, httpResponse, err := apiInstances.GetLogsPipelinesApiV1().
+		UpdateLogsPipeline(auth, d.Id(), ddPipeline)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error updating logs integration pipeline")
-	}
-	if err := utils.CheckForUnparsed(updatedPipeline); err != nil {
-		return diag.FromErr(err)
 	}
 	d.SetId(*updatedPipeline.Id)
 	return updateLogsIntegrationPipelineState(d, &updatedPipeline)

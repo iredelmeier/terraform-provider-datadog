@@ -23,17 +23,10 @@ resource "datadog_metric_tag_configuration" "example_dist_metric" {
 
 # Manage tag configurations for a Datadog count or gauge metric
 resource "datadog_metric_tag_configuration" "example_count_metric" {
-  metric_name = "example.terraform.count.metric"
-  metric_type = "count"
-  tags        = ["sport", "datacenter"]
-  aggregations {
-    time  = "avg"
-    space = "min"
-  }
-  aggregations {
-    time  = "avg"
-    space = "max"
-  }
+  metric_name       = "example.terraform.count.metric"
+  metric_type       = "count"
+  tags              = ["sport", "datacenter"]
+  exclude_tags_mode = false
 }
 ```
 
@@ -42,25 +35,34 @@ resource "datadog_metric_tag_configuration" "example_count_metric" {
 
 ### Required
 
-- **metric_name** (String) The metric name for this resource.
-- **metric_type** (String) The metric's type. This field can't be updated after creation. Valid values are `gauge`, `count`, `rate`, `distribution`.
-- **tags** (Set of String) A list of tag keys that will be queryable for your metric.
+- `metric_name` (String) The metric name for this resource.
+- `metric_type` (String) The metric's type. This field can't be updated after creation. Valid values are `gauge`, `count`, `rate`, `distribution`.
+- `tags` (Set of String) A list of tag keys that will be queryable for your metric.
 
 ### Optional
 
-- **aggregations** (Block Set) A list of queryable aggregation combinations for a count, rate, or gauge metric. By default, count and rate metrics require the (time: sum, space: sum) aggregation and gauge metrics require the (time: avg, space: avg) aggregation. Can only be applied to metrics that have a `metric_type` of count, rate, or gauge. (see [below for nested schema](#nestedblock--aggregations))
-- **include_percentiles** (Boolean) Toggle to include/exclude percentiles for a distribution metric. Defaults to false. Can only be applied to metrics that have a `metric_type` of distribution.
+- `aggregations` (Block Set, Deprecated) A list of queryable aggregation combinations for a count, rate, or gauge metric. By default, count and rate metrics require the (time: sum, space: sum) aggregation and gauge metrics require the (time: avg, space: avg) aggregation. Can only be applied to metrics that have a `metric_type` of count, rate, or gauge. **Deprecated.** The 'aggregations' field is no longer supported by the Datadog API and will be ignored. This field will be removed in a future version of the provider. (see [below for nested schema](#nestedblock--aggregations))
+- `exclude_tags_mode` (Boolean) Toggle to include/exclude tags as queryable for your metric. Can only be applied to metrics that have one or more tags configured. Defaults to `false`.
+- `include_percentiles` (Boolean) Toggle to include/exclude percentiles for a distribution metric. Defaults to false. Can only be applied to metrics that have a `metric_type` of distribution.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
 
 <a id="nestedblock--aggregations"></a>
 ### Nested Schema for `aggregations`
 
 Required:
 
-- **space** (String) A space aggregation for use in query. Valid values are `avg`, `max`, `min`, `sum`.
-- **time** (String) A time aggregation for use in query. Valid values are `avg`, `count`, `max`, `min`, `sum`.
+- `space` (String) A space aggregation for use in query. Valid values are `avg`, `max`, `min`, `sum`.
+- `time` (String) A time aggregation for use in query. Valid values are `avg`, `count`, `max`, `min`, `sum`.
 
+## Import
 
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+terraform import datadog_metric_tag_configuration.example_dist_metric example.terraform.dist.metric
+```

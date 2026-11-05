@@ -1,0 +1,3082 @@
+package fwprovider
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
+
+	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	frameworkPath "github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/customtypes"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/fwutils"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
+)
+
+var (
+	_ resource.ResourceWithConfigure        = &monitorResource{}
+	_ resource.ResourceWithImportState      = &monitorResource{}
+	_ resource.ResourceWithModifyPlan       = &monitorResource{}
+	_ resource.ResourceWithConfigValidators = &monitorResource{}
+)
+
+var stringFloatValidator = stringvalidator.RegexMatches(
+	regexp.MustCompile(`\d*(\.\d*)?`), "value must be a float")
+
+func enumStrings[E ~string](vals []E) []string {
+	res := make([]string, len(vals))
+	for i, v := range vals {
+		res[i] = string(v)
+	}
+	return res
+}
+
+type monitorResourceModel struct {
+	ID                      types.String                     `tfsdk:"id"`
+	Name                    types.String                     `tfsdk:"name"`
+	Message                 customtypes.TrimSpaceStringValue `tfsdk:"message"`
+	EscalationMessage       customtypes.TrimSpaceStringValue `tfsdk:"escalation_message"`
+	Type                    customtypes.MonitorTypeValue     `tfsdk:"type"`
+	Query                   customtypes.TrimSpaceStringValue `tfsdk:"query"`
+	Priority                types.String                     `tfsdk:"priority"`
+	Tags                    types.Set                        `tfsdk:"tags"`
+	IgnoreTagKeys           types.Set                        `tfsdk:"ignore_tag_keys"`
+	EffectiveTags           types.Set                        `tfsdk:"effective_tags"`
+	NotifyNoData            types.Bool                       `tfsdk:"notify_no_data"`
+	OnMissingData           types.String                     `tfsdk:"on_missing_data"`
+	GroupRetentionDuration  types.String                     `tfsdk:"group_retention_duration"`
+	NewGroupDelay           types.Int64                      `tfsdk:"new_group_delay"`
+	NewHostDelay            types.Int64                      `tfsdk:"new_host_delay"`
+	EvaluationDelay         types.Int64                      `tfsdk:"evaluation_delay"`
+	NoDataTimeframe         types.Int64                      `tfsdk:"no_data_timeframe"`
+	RenotifyInterval        types.Int64                      `tfsdk:"renotify_interval"`
+	RenotifyOccurrences     types.Int64                      `tfsdk:"renotify_occurrences"`
+	RenotifyStatuses        types.Set                        `tfsdk:"renotify_statuses"`
+	NotifyAudit             types.Bool                       `tfsdk:"notify_audit"`
+	TimeoutH                types.Int64                      `tfsdk:"timeout_h"`
+	RequireFullWindow       types.Bool                       `tfsdk:"require_full_window"`
+	RestrictedRoles         types.Set                        `tfsdk:"restricted_roles"`
+	IncludeTags             types.Bool                       `tfsdk:"include_tags"`
+	GroupbySimpleMonitor    types.Bool                       `tfsdk:"groupby_simple_monitor"`
+	NotifyBy                types.Set                        `tfsdk:"notify_by"`
+	EnableLogsSample        types.Bool                       `tfsdk:"enable_logs_sample"`
+	EnableSamples           types.Bool                       `tfsdk:"enable_samples"`
+	ForceDelete             types.Bool                       `tfsdk:"force_delete"`
+	Validate                types.Bool                       `tfsdk:"validate"`
+	NotificationPresetName  types.String                     `tfsdk:"notification_preset_name"`
+	MonitorThresholds       []MonitorThreshold               `tfsdk:"monitor_thresholds"`
+	MonitorThresholdWindows []MonitorThresholdWindow         `tfsdk:"monitor_threshold_windows"`
+	SchedulingOptions       []SchedulingOption               `tfsdk:"scheduling_options"`
+	Variables               []Variable                       `tfsdk:"variables"`
+	DraftStatus             types.String                     `tfsdk:"draft_status"`
+	MonitorAssets           []MonitorAsset                   `tfsdk:"assets"`
+}
+
+type MonitorAsset struct {
+	Name         types.String `tfsdk:"name"`
+	Url          types.String `tfsdk:"url"`
+	Category     types.String `tfsdk:"category"`
+	ResourceKey  types.String `tfsdk:"resource_key"`
+	ResourceType types.String `tfsdk:"resource_type"`
+}
+
+type MonitorThreshold struct {
+	Ok                    customtypes.FloatStringValue `tfsdk:"ok"`
+	Unknown               customtypes.FloatStringValue `tfsdk:"unknown"`
+	Warning               customtypes.FloatStringValue `tfsdk:"warning"`
+	WarningRecovery       customtypes.FloatStringValue `tfsdk:"warning_recovery"`
+	Critical              customtypes.FloatStringValue `tfsdk:"critical"`
+	CriticalRecovery      customtypes.FloatStringValue `tfsdk:"critical_recovery"`
+	CriticalQuery         types.String                 `tfsdk:"critical_query"`
+	CriticalRecoveryQuery types.String                 `tfsdk:"critical_recovery_query"`
+}
+
+type MonitorThresholdWindow struct {
+	RecoveryWindow types.String `tfsdk:"recovery_window"`
+	TriggerWindow  types.String `tfsdk:"trigger_window"`
+}
+
+type SchedulingOption struct {
+	EvaluationWindow []EvaluationWindow `tfsdk:"evaluation_window"`
+	CustomSchedule   []CustomSchedule   `tfsdk:"custom_schedule"`
+}
+
+type EvaluationWindow struct {
+	DayStarts   types.String `tfsdk:"day_starts"`
+	MonthStarts types.Int32  `tfsdk:"month_starts"`
+	HourStarts  types.Int32  `tfsdk:"hour_starts"`
+	Timezone    types.String `tfsdk:"timezone"`
+}
+
+type CustomSchedule struct {
+	Recurrence []Recurrence `tfsdk:"recurrence"`
+}
+
+type Recurrence struct {
+	Rrule    types.String `tfsdk:"rrule"`
+	Start    types.String `tfsdk:"start"`
+	Timezone types.String `tfsdk:"timezone"`
+}
+
+type Variable struct {
+	EventQuery              []EventQuery              `tfsdk:"event_query"`
+	CloudCostQuery          []CloudCostQuery          `tfsdk:"cloud_cost_query"`
+	DataQualityQuery        []DataQualityQuery        `tfsdk:"data_quality_query"`
+	AggregateAugmentedQuery []AggregateAugmentedQuery `tfsdk:"aggregate_augmented_query"`
+	AggregateFilteredQuery  []AggregateFilteredQuery  `tfsdk:"aggregate_filtered_query"`
+	DataJobsQuery           []DataJobsQuery           `tfsdk:"data_jobs_query"`
+}
+
+type EventQuery struct {
+	DataSource types.String `tfsdk:"data_source"`
+	Indexes    types.List   `tfsdk:"indexes"`
+	Name       types.String `tfsdk:"name"`
+	Search     []Search     `tfsdk:"search"`
+	Compute    []Compute    `tfsdk:"compute"`
+	GroupBy    []GroupBy    `tfsdk:"group_by"`
+}
+
+type Search struct {
+	Query types.String `tfsdk:"query"`
+}
+
+type Compute struct {
+	Aggregation types.String `tfsdk:"aggregation"`
+	Interval    types.Int64  `tfsdk:"interval"`
+	Metric      types.String `tfsdk:"metric"`
+	Name        types.String `tfsdk:"name"`
+}
+
+type GroupBy struct {
+	Facet  types.String `tfsdk:"facet"`
+	Source types.String `tfsdk:"source"`
+	Limit  types.Int64  `tfsdk:"limit"`
+	Sort   []Sort       `tfsdk:"sort"`
+}
+
+// AggregateAugmentedQuery is a formula monitor variable of type aggregate_augmented_query.
+type AggregateAugmentedQuery struct {
+	Name                  types.String                    `tfsdk:"name"`
+	DataSource            types.String                    `tfsdk:"data_source"`
+	AugmentReferenceTable []ReferenceTableMonitorVariable `tfsdk:"augment_reference_table"`
+	AugmentEventQuery     []EventQuery                    `tfsdk:"augment_event_query"`
+	BaseMetricsQuery      []BaseMetricsQuery              `tfsdk:"base_metrics_query"`
+	BaseEventQuery        []EventQuery                    `tfsdk:"base_event_query"`
+	JoinCondition         []AggregateJoinCondition        `tfsdk:"join_condition"`
+	Compute               []Compute                       `tfsdk:"compute"`
+	GroupBy               []GroupBy                       `tfsdk:"group_by"`
+}
+
+// ReferenceTableMonitorVariable is the reference-table branch of an aggregate augment or filter query.
+type ReferenceTableMonitorVariable struct {
+	Name        types.String     `tfsdk:"name"`
+	DataSource  types.String     `tfsdk:"data_source"`
+	TableName   types.String     `tfsdk:"table_name"`
+	QueryFilter types.String     `tfsdk:"query_filter"`
+	Columns     []RefTableColumn `tfsdk:"columns"`
+}
+
+// AggregateFilteredQuery is a formula monitor variable of type aggregate_filtered_query.
+type AggregateFilteredQuery struct {
+	Name                 types.String                    `tfsdk:"name"`
+	DataSource           types.String                    `tfsdk:"data_source"`
+	FilterReferenceTable []ReferenceTableMonitorVariable `tfsdk:"filter_reference_table"`
+	FilterEventQuery     []EventQuery                    `tfsdk:"filter_event_query"`
+	BaseMetricsQuery     []BaseMetricsQuery              `tfsdk:"base_metrics_query"`
+	BaseEventQuery       []EventQuery                    `tfsdk:"base_event_query"`
+	Filters              []AggregateQueryFilter          `tfsdk:"filters"`
+	Compute              []Compute                       `tfsdk:"compute"`
+	GroupBy              []GroupBy                       `tfsdk:"group_by"`
+}
+
+// AggregateQueryFilter maps base and filter attributes for aggregate_filtered_query.
+type AggregateQueryFilter struct {
+	BaseAttribute   types.String `tfsdk:"base_attribute"`
+	FilterAttribute types.String `tfsdk:"filter_attribute"`
+	Exclude         types.Bool   `tfsdk:"exclude"`
+}
+
+// RefTableColumn is a column in a reference table augment query.
+type RefTableColumn struct {
+	Name  types.String `tfsdk:"name"`
+	Alias types.String `tfsdk:"alias"`
+}
+
+// BaseMetricsQuery is the metrics branch of a base query in an aggregate-augmented variable.
+type BaseMetricsQuery struct {
+	DataSource types.String `tfsdk:"data_source"`
+	Name       types.String `tfsdk:"name"`
+	Query      types.String `tfsdk:"query"`
+	Aggregator types.String `tfsdk:"aggregator"`
+}
+
+// AggregateJoinCondition joins augment and base sub-queries.
+type AggregateJoinCondition struct {
+	AugmentAttribute types.String `tfsdk:"augment_attribute"`
+	BaseAttribute    types.String `tfsdk:"base_attribute"`
+	JoinType         types.String `tfsdk:"join_type"`
+}
+
+type Sort struct {
+	Aggregation types.String `tfsdk:"aggregation"`
+	Metric      types.String `tfsdk:"metric"`
+	Order       types.String `tfsdk:"order"`
+}
+
+type CloudCostQuery struct {
+	DataSource types.String `tfsdk:"data_source"`
+	Query      types.String `tfsdk:"query"`
+	Aggregator types.String `tfsdk:"aggregator"`
+	Name       types.String `tfsdk:"name"`
+}
+
+type DataQualityQuery struct {
+	Name           types.String                `tfsdk:"name"`
+	DataSource     types.String                `tfsdk:"data_source"`
+	SchemaVersion  types.String                `tfsdk:"schema_version"`
+	Measure        types.String                `tfsdk:"measure"`
+	Filter         types.String                `tfsdk:"filter"`
+	Scope          types.String                `tfsdk:"scope"`
+	GroupBy        types.List                  `tfsdk:"group_by"`
+	MonitorOptions []DataQualityMonitorOptions `tfsdk:"monitor_options"`
+}
+
+type DataQualityMonitorOptions struct {
+	CustomSql         types.String  `tfsdk:"custom_sql"`
+	CustomWhere       types.String  `tfsdk:"custom_where"`
+	GroupByColumns    types.List    `tfsdk:"group_by_columns"`
+	CrontabOverride   types.String  `tfsdk:"crontab_override"`
+	ModelTypeOverride types.String  `tfsdk:"model_type_override"`
+	Sensitivity       types.Float64 `tfsdk:"sensitivity"`
+
+	SourceToTargetConfig []DataQualitySourceToTargetConfig `tfsdk:"source_to_target_config"`
+	ModelConfiguration   []DataQualityModelConfiguration   `tfsdk:"model_configuration"`
+}
+
+type DataQualitySourceToTargetConfig struct {
+	Source     []DataQualityEntityMetricConfig `tfsdk:"source"`
+	Target     []DataQualityEntityMetricConfig `tfsdk:"target"`
+	DiffType   types.String                    `tfsdk:"diff_type"`
+	EntityType types.String                    `tfsdk:"entity_type"`
+}
+
+type DataQualityEntityMetricConfig struct {
+	EntityId       types.String `tfsdk:"entity_id"`
+	EntityType     types.String `tfsdk:"entity_type"`
+	CustomSql      types.String `tfsdk:"custom_sql"`
+	CustomWhere    types.String `tfsdk:"custom_where"`
+	GroupByColumns types.List   `tfsdk:"group_by_columns"`
+}
+
+// dataQualityEntityMetricConfigBlock describes one side of a source to target
+// comparison. Source and target are identical, so they share this definition.
+func dataQualityEntityMetricConfigBlock() schema.NestedBlockObject {
+	return schema.NestedBlockObject{
+		Attributes: map[string]schema.Attribute{
+			"entity_id": schema.StringAttribute{
+				Required:    true,
+				Description: "Identifier of the data entity to measure.",
+			},
+			"entity_type": schema.StringAttribute{
+				Required:    true,
+				Description: "Type of the data entity to measure.",
+			},
+			"custom_sql": schema.StringAttribute{
+				Optional:    true,
+				Description: "Custom SQL query used to compute the measure for this entity.",
+			},
+			"custom_where": schema.StringAttribute{
+				Optional:    true,
+				Description: "Custom WHERE clause applied when computing the measure for this entity.",
+			},
+			"group_by_columns": schema.ListAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+				Description: "Columns to group results by when computing the measure for this entity.",
+			},
+		},
+	}
+}
+
+type DataQualityModelConfiguration struct {
+	AutoResolveDays         types.Int32   `tfsdk:"auto_resolve_days"`
+	EnableFlatlineDetection types.Bool    `tfsdk:"enable_flatline_detection"`
+	Function                types.String  `tfsdk:"function"`
+	MinLowerBoundSize       types.Float64 `tfsdk:"min_lower_bound_size"`
+	MinUpperBoundSize       types.Float64 `tfsdk:"min_upper_bound_size"`
+	ModelBoundsOverride     types.String  `tfsdk:"model_bounds_override"`
+}
+
+type DataJobsQuery struct {
+	Name         types.String `tfsdk:"name"`
+	JobsQuery    types.String `tfsdk:"jobs_query"`
+	JobType      types.String `tfsdk:"job_type"`
+	QueryDialect types.String `tfsdk:"query_dialect"`
+}
+
+type monitorResource struct {
+	Api           *datadogV1.MonitorsApi
+	Auth          context.Context
+	DefaultTags   map[string]string
+	IgnoreTagKeys []string
+}
+
+func NewMonitorResource() resource.Resource {
+	return &monitorResource{}
+}
+
+func (r *monitorResource) ConfigValidators(ctx context.Context) []resource.ConfigValidator {
+	return []resource.ConfigValidator{
+		resourcevalidator.Conflicting(
+			frameworkPath.MatchRoot("notify_no_data"),
+			frameworkPath.MatchRoot("on_missing_data"),
+		),
+		resourcevalidator.Conflicting(
+			frameworkPath.MatchRoot("on_missing_data"),
+			frameworkPath.MatchRoot("no_data_timeframe"),
+		),
+		resourcevalidator.Conflicting(
+			frameworkPath.MatchRoot("scheduling_options").AtAnyListIndex().
+				AtName("evaluation_window").AtAnyListIndex().
+				AtName("hour_starts"),
+			frameworkPath.MatchRoot("scheduling_options").AtAnyListIndex().
+				AtName("evaluation_window").AtAnyListIndex().
+				AtName("day_starts"),
+		),
+		resourcevalidator.Conflicting(
+			frameworkPath.MatchRoot("scheduling_options").AtAnyListIndex().
+				AtName("evaluation_window").AtAnyListIndex().
+				AtName("hour_starts"),
+			frameworkPath.MatchRoot("scheduling_options").AtAnyListIndex().
+				AtName("evaluation_window").AtAnyListIndex().
+				AtName("month_starts"),
+		),
+		resourcevalidator.Conflicting(
+			frameworkPath.MatchRoot("no_data_timeframe"),
+			frameworkPath.MatchRoot("scheduling_options").AtAnyListIndex().
+				AtName("custom_schedule"),
+		),
+		resourcevalidator.RequiredTogether(
+			frameworkPath.MatchRoot("scheduling_options").AtAnyListIndex().
+				AtName("evaluation_window").AtAnyListIndex().
+				AtName("day_starts"),
+			frameworkPath.MatchRoot("scheduling_options").AtAnyListIndex().
+				AtName("evaluation_window").AtAnyListIndex().
+				AtName("month_starts"),
+		),
+	}
+}
+
+func (r *monitorResource) Configure(_ context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
+	providerData, _ := request.ProviderData.(*FrameworkProvider)
+	r.Api = providerData.DatadogApiInstances.GetMonitorsApiV1()
+	r.Auth = providerData.Auth
+	r.DefaultTags = providerData.DefaultTags
+	r.IgnoreTagKeys = providerData.IgnoreTagKeys
+}
+
+func (r *monitorResource) Metadata(_ context.Context, request resource.MetadataRequest, response *resource.MetadataResponse) {
+	response.TypeName = "monitor"
+}
+
+// variablesEventQueryNestedObject returns the nested object schema for formula monitor variable event queries (shared by event_query and aggregate-augmented augment/base branches).
+func (r *monitorResource) variablesEventQueryNestedObject() schema.NestedBlockObject {
+	return schema.NestedBlockObject{
+		Attributes: map[string]schema.Attribute{
+			"data_source": schema.StringAttribute{
+				Required:    true,
+				Description: "The data source for event platform-based queries.",
+				Validators: []validator.String{
+					stringvalidator.OneOf(r.getAllowEventQueryDataSource()...),
+				},
+			},
+			"indexes": schema.ListAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+				Description: "An array of index names to query in the stream.",
+			},
+			"name": schema.StringAttribute{
+				Required:    true,
+				Description: "The name of query for use in formulas.",
+			},
+		},
+		Blocks: map[string]schema.Block{
+			"search": schema.ListNestedBlock{
+				Description: "The search options.",
+				Validators: []validator.List{
+					listvalidator.IsRequired(),
+					listvalidator.SizeAtMost(1),
+				},
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"query": schema.StringAttribute{
+							Required:    true,
+							Description: "The events search string.",
+						},
+					},
+				},
+			},
+			"compute": schema.ListNestedBlock{
+				Description: "The compute options.",
+				Validators: []validator.List{
+					listvalidator.IsRequired(),
+				},
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"aggregation": schema.StringAttribute{
+							Required:    true,
+							Description: "The aggregation methods for event platform queries.",
+							Validators: []validator.String{
+								stringvalidator.OneOf(r.getAllowEventQueryAggregation()...),
+							},
+						},
+						"interval": schema.Int64Attribute{
+							Optional:    true,
+							Description: "A time interval in milliseconds.",
+						},
+						"metric": schema.StringAttribute{
+							Optional:    true,
+							Description: "The measurable attribute to compute.",
+						},
+						"name": schema.StringAttribute{
+							Optional:    true,
+							Description: "The name assigned to this aggregation when multiple aggregations are defined for a query.",
+						},
+					},
+				},
+			},
+			"group_by": schema.ListNestedBlock{
+				Description: "Group by options.",
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"facet": schema.StringAttribute{
+							Required:    true,
+							Description: "The event facet.",
+						},
+						"source": schema.StringAttribute{
+							Optional:    true,
+							Description: "For composite aggregate-augmented queries, identifies which sub-query this group-by facet refers to (for example `filter_query`).",
+						},
+						"limit": schema.Int64Attribute{
+							Optional:    true,
+							Description: "The number of groups to return.",
+						},
+					},
+					Blocks: map[string]schema.Block{
+						"sort": schema.ListNestedBlock{
+							Description: "The options for sorting group by results.",
+							Validators: []validator.List{
+								listvalidator.SizeAtMost(1),
+							},
+							NestedObject: schema.NestedBlockObject{
+								Attributes: map[string]schema.Attribute{
+									"aggregation": schema.StringAttribute{
+										Required:    true,
+										Description: "The aggregation methods for the event platform queries.",
+										Validators: []validator.String{
+											stringvalidator.OneOf(r.getAllowEventQueryAggregation()...),
+										},
+									},
+									"metric": schema.StringAttribute{
+										Optional:    true,
+										Description: "The metric used for sorting group by results.",
+									},
+									"order": schema.StringAttribute{
+										Optional:    true,
+										Description: "Direction of sort.",
+										Validators: []validator.String{
+											stringvalidator.OneOf(r.getAllowEventQueryOrder()...),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// variablesAggregateFilteredQueryListBlock returns the schema for aggregate_filtered_query monitor variables.
+func (r *monitorResource) variablesAggregateFilteredQueryListBlock() schema.Block {
+	return schema.ListNestedBlock{
+		Description: "Aggregate-filtered composite query variables (filter a metrics or events base query using a reference table or events filter query).",
+		NestedObject: schema.NestedBlockObject{
+			Attributes: map[string]schema.Attribute{
+				"name": schema.StringAttribute{
+					Optional:    true,
+					Description: "Name of the query for use in formulas.",
+				},
+				"data_source": schema.StringAttribute{
+					Required:    true,
+					Description: "Must be `aggregate_filtered_query`.",
+					Validators: []validator.String{
+						stringvalidator.OneOf(r.getAllowAggregateFilteredDataSource()...),
+					},
+				},
+			},
+			Blocks: map[string]schema.Block{
+				"filter_reference_table": schema.ListNestedBlock{
+					Description: "Reference table filter query. Conflicts with `filter_event_query` in configuration.",
+					Validators: []validator.List{
+						listvalidator.SizeAtMost(1),
+					},
+					NestedObject: schema.NestedBlockObject{
+						Attributes: map[string]schema.Attribute{
+							"name": schema.StringAttribute{
+								Optional:    true,
+								Description: "Name of the filter sub-query.",
+							},
+							"data_source": schema.StringAttribute{
+								Required:    true,
+								Description: "Must be `reference_table`.",
+								Validators: []validator.String{
+									stringvalidator.OneOf(r.getAllowReferenceTableDataSource()...),
+								},
+							},
+							"table_name": schema.StringAttribute{
+								Required:    true,
+								Description: "Name of the reference table.",
+							},
+							"query_filter": schema.StringAttribute{
+								Optional:    true,
+								Description: "Optional filter expression for the reference table query.",
+							},
+						},
+						Blocks: map[string]schema.Block{
+							"columns": schema.ListNestedBlock{
+								Description: "Columns to retrieve from the reference table.",
+								NestedObject: schema.NestedBlockObject{
+									Attributes: map[string]schema.Attribute{
+										"name": schema.StringAttribute{
+											Required:    true,
+											Description: "Reference table column name.",
+										},
+										"alias": schema.StringAttribute{
+											Optional:    true,
+											Description: "Optional alias for the column.",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				"filter_event_query": schema.ListNestedBlock{
+					Description: "Events filter query. Conflicts with `filter_reference_table` in configuration.",
+					Validators: []validator.List{
+						listvalidator.SizeAtMost(1),
+					},
+					NestedObject: r.variablesEventQueryNestedObject(),
+				},
+				"base_metrics_query": schema.ListNestedBlock{
+					Description: "Metrics base query. Conflicts with `base_event_query` in configuration.",
+					Validators: []validator.List{
+						listvalidator.SizeAtMost(1),
+					},
+					NestedObject: schema.NestedBlockObject{
+						Attributes: map[string]schema.Attribute{
+							"data_source": schema.StringAttribute{
+								Required:    true,
+								Description: "The data source for metrics queries.",
+								Validators: []validator.String{
+									stringvalidator.OneOf(r.getAllowMetricsDataSource()...),
+								},
+							},
+							"name": schema.StringAttribute{
+								Optional:    true,
+								Description: "The name of the query for use in formulas.",
+							},
+							"query": schema.StringAttribute{
+								Required:    true,
+								Description: "The metrics query definition.",
+							},
+							"aggregator": schema.StringAttribute{
+								Optional:    true,
+								Description: "The aggregation method for metrics queries.",
+								Validators: []validator.String{
+									stringvalidator.OneOf(r.getAllowMetricsAggregator()...),
+								},
+							},
+						},
+					},
+				},
+				"base_event_query": schema.ListNestedBlock{
+					Description: "Events base query. Conflicts with `base_metrics_query` in configuration.",
+					Validators: []validator.List{
+						listvalidator.SizeAtMost(1),
+					},
+					NestedObject: r.variablesEventQueryNestedObject(),
+				},
+				"filters": schema.ListNestedBlock{
+					Description: "Filter conditions mapping base query attributes to filter query attributes. At least one block is required.",
+					Validators: []validator.List{
+						listvalidator.SizeAtLeast(1),
+					},
+					NestedObject: schema.NestedBlockObject{
+						Attributes: map[string]schema.Attribute{
+							"base_attribute": schema.StringAttribute{
+								Required:    true,
+								Description: "Attribute from the base query to filter on.",
+							},
+							"filter_attribute": schema.StringAttribute{
+								Required:    true,
+								Description: "Attribute from the filter query to match against.",
+							},
+							"exclude": schema.BoolAttribute{
+								Optional:    true,
+								Description: "When true, exclude matching records instead of including them.",
+							},
+						},
+					},
+				},
+				"compute": schema.ListNestedBlock{
+					Description: "Optional compute aggregations for the aggregate-filtered query.",
+					NestedObject: schema.NestedBlockObject{
+						Attributes: map[string]schema.Attribute{
+							"aggregation": schema.StringAttribute{
+								Required:    true,
+								Description: "The aggregation methods for compute steps.",
+								Validators: []validator.String{
+									stringvalidator.OneOf(r.getAllowEventQueryAggregation()...),
+								},
+							},
+							"interval": schema.Int64Attribute{
+								Optional:    true,
+								Description: "A time interval in milliseconds.",
+							},
+							"metric": schema.StringAttribute{
+								Optional:    true,
+								Description: "The measurable attribute to compute.",
+							},
+							"name": schema.StringAttribute{
+								Optional:    true,
+								Description: "The name assigned to this aggregation when multiple aggregations are defined.",
+							},
+						},
+					},
+				},
+				"group_by": schema.ListNestedBlock{
+					Description: "Optional group by options for the aggregate-filtered query.",
+					NestedObject: schema.NestedBlockObject{
+						Attributes: map[string]schema.Attribute{
+							"facet": schema.StringAttribute{
+								Required:    true,
+								Description: "The facet to group by.",
+							},
+							"source": schema.StringAttribute{
+								Optional:    true,
+								Description: "Identifies which sub-query this facet refers to (for example `filter_query`).",
+							},
+							"limit": schema.Int64Attribute{
+								Optional:    true,
+								Description: "The number of groups to return.",
+							},
+						},
+						Blocks: map[string]schema.Block{
+							"sort": schema.ListNestedBlock{
+								Description: "Sort options for group by.",
+								Validators: []validator.List{
+									listvalidator.SizeAtMost(1),
+								},
+								NestedObject: schema.NestedBlockObject{
+									Attributes: map[string]schema.Attribute{
+										"aggregation": schema.StringAttribute{
+											Required:    true,
+											Description: "The aggregation methods for sorting.",
+											Validators: []validator.String{
+												stringvalidator.OneOf(r.getAllowEventQueryAggregation()...),
+											},
+										},
+										"metric": schema.StringAttribute{
+											Optional:    true,
+											Description: "The metric used for sorting group by results.",
+										},
+										"order": schema.StringAttribute{
+											Optional:    true,
+											Description: "Direction of sort.",
+											Validators: []validator.String{
+												stringvalidator.OneOf(r.getAllowEventQueryOrder()...),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func (r *monitorResource) Schema(_ context.Context, _ resource.SchemaRequest, response *resource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Description: "Provides a Datadog monitor resource. This can be used to create and manage Datadog monitors.",
+		Attributes: map[string]schema.Attribute{
+			"id": utils.ResourceIDAttribute(),
+			"name": schema.StringAttribute{
+				Description: "Name of Datadog monitor.",
+				Required:    true,
+			},
+			"message": schema.StringAttribute{
+				Description: "A message to include with notifications for this monitor.\n\nEmail notifications can be sent to specific users by using the same `@username` notation as events.",
+				Required:    true,
+				CustomType:  customtypes.TrimSpaceStringType{},
+			},
+			"query": schema.StringAttribute{
+				Description: "The monitor query to notify on. Note this is not the same query you see in the UI and the syntax is different depending on the monitor type, please see the [API Reference](https://docs.datadoghq.com/api/v1/monitors/#create-a-monitor) for details. `terraform plan` will validate query contents unless `validate` is set to `false`.\n\n**Note:** APM latency data is now available as Distribution Metrics. Existing monitors have been migrated automatically but all terraformed monitors can still use the existing metrics. We strongly recommend updating monitor definitions to query the new metrics. To learn more, or to see examples of how to update your terraform definitions to utilize the new distribution metrics, see the [detailed doc](https://docs.datadoghq.com/tracing/guide/ddsketch_trace_metrics/).",
+				Required:    true,
+				CustomType:  customtypes.TrimSpaceStringType{},
+			},
+			"type": schema.StringAttribute{
+				Description: "The type of the monitor. The mapping from these types to the types found in the Datadog Web UI can be found in the Datadog API [documentation page](https://docs.datadoghq.com/api/v1/monitors/#create-a-monitor). Note: The monitor type cannot be changed after a monitor is created.",
+				Required:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf(r.getAllowTypes()...),
+				},
+				// Datadog API quirk, see https://github.com/hashicorp/terraform/issues/13784
+				CustomType: customtypes.MonitorTypeType{},
+				// Due to the API quirk mentioned above, will mute replace resource, when user tries to change type from
+				// metric alert to query alert
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplaceIf(func(_ context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
+						oldType := req.StateValue.ValueString()
+						newType := req.PlanValue.ValueString()
+						if (oldType == "metric alert" && newType == "query alert") ||
+							oldType == "query alert" && newType == "metric alert" {
+							return
+						}
+						resp.RequiresReplace = true
+					}, "", ""),
+				},
+			},
+			// since this is only useful for "log alert" type, we don't set a default value
+			// if we did set it, it would be used for all types; we have to handle this manually
+			// throughout the code
+			"enable_logs_sample": schema.BoolAttribute{
+				Description: "A boolean indicating whether or not to include a list of log values which triggered the alert. This is only used by log monitors. Defaults to `false`.",
+				Optional:    true,
+			},
+			"enable_samples": schema.BoolAttribute{
+				Description: "Whether or not a list of samples which triggered the alert is included. This is only used by CI Test and Pipeline monitors.",
+				Optional:    true,
+			},
+			"escalation_message": schema.StringAttribute{
+				Description: "A message to include with a re-notification. Supports the `@username` notification allowed elsewhere.",
+				Optional:    true,
+				CustomType:  customtypes.TrimSpaceStringType{},
+			},
+			"evaluation_delay": schema.Int64Attribute{
+				Description: "(Only applies to metric alert) Time (in seconds) to delay evaluation, as a non-negative integer.\n\nFor example, if the value is set to `300` (5min), the `timeframe` is set to `last_5m` and the time is 7:00, the monitor will evaluate data from 6:50 to 6:55. This is useful for AWS CloudWatch and other backfilled metrics to ensure the monitor will always have data during evaluation.",
+				Computed:    true,
+				Optional:    true,
+			},
+			"force_delete": schema.BoolAttribute{
+				Description: "A boolean indicating whether this monitor can be deleted even if it’s referenced by other resources (e.g. SLO, composite monitor).",
+				Optional:    true,
+			},
+			"groupby_simple_monitor": schema.BoolAttribute{
+				Description: "Whether or not to trigger one alert if any source breaches a threshold. This is only used by log monitors. Defaults to `false`.",
+				Optional:    true,
+				Computed:    true,
+			},
+			"group_retention_duration": schema.StringAttribute{
+				Description: "The time span after which groups with missing data are dropped from the monitor state. The minimum value is one hour, and the maximum value is 72 hours. Example values are: 60m, 1h, and 2d. This option is only available for APM Trace Analytics, Audit Trail, CI, Error Tracking, Event, Logs, and RUM monitors.",
+				Optional:    true,
+			},
+			"include_tags": schema.BoolAttribute{
+				Description: "A boolean indicating whether notifications from this monitor automatically insert its triggering tags into the title.",
+				Optional:    true,
+				Computed:    true,
+				Default:     booldefault.StaticBool(true),
+			},
+			// We only set new_group_delay in the monitor API payload if it is nonzero
+			// because the SDKv2 terraform plugin API prevents unsetting new_group_delay
+			// in updateMonitorState, so we can't reliably distinguish between new_group_delay
+			// being unset (null) or set to zero.
+			// Note that "new_group_delay overrides new_host_delay if it is set to a nonzero value"
+			// refers to this terraform resource. In the API, setting new_group_delay
+			// to any value, including zero, causes it to override new_host_delay.
+			"new_group_delay": schema.Int64Attribute{
+				Description: "The time (in seconds) to skip evaluations for new groups.\n\n`new_group_delay` overrides `new_host_delay` if it is set to a nonzero value.",
+				Optional:    true,
+			},
+			"new_host_delay": schema.Int64Attribute{
+				// Removing the default requires removing the default in the API as well (possibly only for
+				// terraform user agents)
+				MarkdownDescription: "**Deprecated**. See `new_group_delay`. Time (in seconds) to allow a host to boot and applications to fully start before starting the evaluation of monitor results. Should be a non-negative integer. This value is ignored for simple monitors and monitors not grouped by host. The only case when this should be used is to override the default and set `new_host_delay` to zero for monitors grouped by host.",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(300),
+				DeprecationMessage:  "Use `new_group_delay` except when setting `new_host_delay` to zero.",
+			},
+			"no_data_timeframe": schema.Int64Attribute{
+				MarkdownDescription: "The number of minutes before a monitor will notify when data stops reporting.\n\nWe recommend at least 2x the monitor timeframe for metric alerts or 2 minutes for service checks.",
+				Optional:            true,
+			},
+			"notification_preset_name": schema.StringAttribute{
+				Description: "Toggles the display of additional content sent in the monitor notification.",
+				Optional:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf(r.getAllowMonitorOptionsNotificationPresets()...),
+				},
+			},
+			"notify_audit": schema.BoolAttribute{
+				MarkdownDescription: "A boolean indicating whether tagged users will be notified on changes to this monitor. Defaults to `false`.",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
+			},
+			"notify_by": schema.SetAttribute{
+				MarkdownDescription: "Controls what granularity a monitor alerts on. Only available for monitors with groupings. For instance, a monitor grouped by `cluster`, `namespace`, and `pod` can be configured to only notify on each new `cluster` violating the alert conditions by setting `notify_by` to `['cluster']`. Tags mentioned in `notify_by` must be a proper subset of the grouping tags in the query. For example, a query grouped by `cluster` and `namespace` cannot notify on `region` because `region` is not part of the grouping tags; furthermore, the same query cannot set `notify_by` to `['cluster', 'namespace']` because that is not a proper subset. Setting `notify_by` to `[*]` configures the monitor to notify as a simple-alert.",
+				Optional:            true,
+				ElementType:         types.StringType,
+			},
+			"notify_no_data": schema.BoolAttribute{
+				Description: "A boolean indicating whether this monitor will notify when data stops reporting.",
+				Optional:    true,
+				Computed:    true,
+				Default:     booldefault.StaticBool(false),
+			},
+			"on_missing_data": schema.StringAttribute{
+				MarkdownDescription: "Controls how groups or monitors are treated if an evaluation does not return any data points. The default option results in different behavior depending on the monitor query type. For monitors using `Count` queries, an empty monitor evaluation is treated as 0 and is compared to the threshold conditions. For monitors using any query type other than `Count`, for example `Gauge`, `Measure`, or `Rate`, the monitor shows the last known status. This option is not available for Service Check, Composite, or SLO monitors. Valid values are: `show_no_data`, `show_and_notify_no_data`, `resolve`, and `default`.",
+				Optional:            true,
+				Validators: []validator.String{
+					stringvalidator.OneOf(r.getAllowOnMissingData()...),
+				},
+			},
+			"priority": schema.StringAttribute{
+				Description: "Integer from 1 (high) to 5 (low) indicating alert severity.",
+				Optional:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("0", "1", "2", "3", "4", "5"),
+				},
+			},
+			"renotify_interval": schema.Int64Attribute{
+				Description: "The number of minutes after the last notification before a monitor will re-notify on the current status. It will only re-notify if it's not resolved.",
+				Optional:    true,
+			},
+			"renotify_occurrences": schema.Int64Attribute{
+				Description: "The number of re-notification messages that should be sent on the current status.",
+				Optional:    true,
+			},
+			"renotify_statuses": schema.SetAttribute{
+				Description: "The types of statuses for which re-notification messages should be sent.",
+				Optional:    true,
+				ElementType: types.StringType,
+				Validators: []validator.Set{
+					setvalidator.ValueStringsAre(stringvalidator.OneOf(r.getAllowRenotifyStatus()...)),
+				},
+			},
+			"require_full_window": schema.BoolAttribute{
+				Description: "A boolean indicating whether this monitor needs a full window of data before it's evaluated. Datadog strongly recommends you set this to `false` for sparse metrics, otherwise some evaluations may be skipped. If there's a custom_schedule set, `require_full_window` must be false and will be ignored.",
+				Optional:    true,
+			},
+			"restricted_roles": schema.SetAttribute{
+				Description:        "A list of unique role identifiers to define which roles are allowed to edit the monitor. Editing a monitor includes any updates to the monitor configuration, monitor deletion, and muting of the monitor for any amount of time. Roles unique identifiers can be pulled from the [Roles API](https://docs.datadoghq.com/api/latest/roles/#list-roles) in the `data.id` field.\n",
+				DeprecationMessage: "Use `datadog_restriction_policy` resource to manage permission",
+				Optional:           true,
+				Computed:           true,
+				ElementType:        types.StringType,
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"tags": schema.SetAttribute{
+				Description: "A list of tags to associate with your monitor. This can help you categorize and filter monitors in the manage monitors page of the UI. Note: it's not currently possible to filter by these tags when querying via the API",
+				// we use TypeSet to represent tags, paradoxically to be able to maintain them ordered;
+				// we order them explicitly in the read/create/update methods of this resource and using
+				// TypeSet makes Terraform ignore differences in order when creating a plan
+				Optional:    true,
+				ElementType: types.StringType,
+			},
+			"ignore_tag_keys": schema.SetAttribute{
+				Description: "Tag keys whose drift Terraform should ignore. Use this to keep specific tags managed outside Terraform (e.g. by the Datadog UI or a tagging service) without `terraform plan` reporting drift on every run. Other tags are still managed normally. Merged with the provider's `ignore_tag_keys` for this resource.",
+				Optional:    true,
+				ElementType: types.StringType,
+			},
+			"effective_tags": schema.SetAttribute{
+				Description: "A list of tags to associate with your monitor, including those inherited from the provider's `default_tags` configuration. This can help you categorize and filter monitors in the manage monitors page of the UI.",
+				Computed:    true,
+				ElementType: types.StringType,
+			},
+			"timeout_h": schema.Int64Attribute{
+				Description: "The number of hours of the monitor not reporting data before it automatically resolves from a triggered state. The minimum allowed value is 0 hours. The maximum allowed value is 24 hours.",
+				Optional:    true,
+			},
+			"validate": schema.BoolAttribute{
+				Description: "If set to `false`, skip the validation call done during plan.",
+				Optional:    true,
+			},
+			"draft_status": schema.StringAttribute{
+				Description: "Indicates whether the monitor is in a draft or published state. When set to `draft`, the monitor appears as Draft and does not send notifications. When set to `published`, the monitor is active, and it evaluates conditions and sends notifications as configured.",
+				Optional:    true,
+				Computed:    true,
+				Default:     stringdefault.StaticString(string(datadogV1.MONITORDRAFTSTATUS_PUBLISHED)),
+				Validators: []validator.String{
+					stringvalidator.OneOf(r.getDraftStatusTypes()...),
+				},
+			},
+		},
+		Blocks: map[string]schema.Block{
+			"assets": schema.ListNestedBlock{
+				Description: "List of monitor assets (e.g., runbooks, dashboards, workflows) tied to this monitor.",
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"name": schema.StringAttribute{
+							Required:    true,
+							Description: "Name for the monitor asset.",
+						},
+						"url": schema.StringAttribute{
+							Required:    true,
+							Description: "URL for the asset.",
+						},
+						"category": schema.StringAttribute{
+							Required:    true,
+							Description: "Type of asset the entity represents on a monitor.",
+							Validators: []validator.String{
+								stringvalidator.OneOf(r.getAllowMonitorAssetCategory()...),
+							},
+						},
+						"resource_key": schema.StringAttribute{
+							Optional:    true,
+							Description: "Identifier of the internal Datadog resource that this asset represents.",
+						},
+						"resource_type": schema.StringAttribute{
+							Optional:    true,
+							Description: "Type of internal Datadog resource associated with a monitor asset.",
+							Validators: []validator.String{
+								stringvalidator.OneOf(r.getAllowMonitorAssetResourceType()...),
+							},
+						},
+					},
+				},
+			},
+			"monitor_thresholds": schema.ListNestedBlock{
+				Description: "Alert thresholds of the monitor.",
+				Validators: []validator.List{
+					listvalidator.SizeAtMost(1),
+				},
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"ok": schema.StringAttribute{
+							Description: "The monitor `OK` threshold. Only supported in monitor type `service check`. Must be a number.",
+							Validators: []validator.String{
+								stringFloatValidator,
+							},
+							Optional:   true,
+							CustomType: customtypes.FloatStringType{},
+						},
+						"warning": schema.StringAttribute{
+							Description: "The monitor `WARNING` threshold. Must be a number.",
+							Validators: []validator.String{
+								stringFloatValidator,
+							},
+							Optional:   true,
+							CustomType: customtypes.FloatStringType{},
+						},
+						"critical": schema.StringAttribute{
+							Description: "The monitor `CRITICAL` threshold. Must be a number.",
+							Validators: []validator.String{
+								stringFloatValidator,
+							},
+							Optional:   true,
+							CustomType: customtypes.FloatStringType{},
+						},
+						"unknown": schema.StringAttribute{
+							Description: "The monitor `UNKNOWN` threshold. Only supported in monitor type `service check`. Must be a number.",
+							Validators: []validator.String{
+								stringFloatValidator,
+							},
+							Optional:   true,
+							CustomType: customtypes.FloatStringType{},
+						},
+						"warning_recovery": schema.StringAttribute{
+							Description: "The monitor `WARNING` recovery threshold. Must be a number.",
+							Validators: []validator.String{
+								stringFloatValidator,
+							},
+							Optional:   true,
+							CustomType: customtypes.FloatStringType{},
+						},
+						"critical_recovery": schema.StringAttribute{
+							Description: "The monitor `CRITICAL` recovery threshold. Must be a number.",
+							Validators: []validator.String{
+								stringFloatValidator,
+							},
+							Optional:   true,
+							CustomType: customtypes.FloatStringType{},
+						},
+						"critical_query": schema.StringAttribute{
+							Description: "Query evaluated as a dynamic `CRITICAL` threshold. Only supported on metric monitors with a formula query and `options['variables']`. Cannot be combined with static thresholds. This field is in preview.",
+							Optional:    true,
+						},
+						"critical_recovery_query": schema.StringAttribute{
+							Description: "Query evaluated as a dynamic `CRITICAL` recovery threshold. Only supported on metric monitors with a formula query and `options['variables']`. Cannot be combined with static thresholds. This field is in preview.",
+							Optional:    true,
+						},
+					},
+				},
+			},
+			"monitor_threshold_windows": schema.ListNestedBlock{
+				Description: "A mapping containing `recovery_window` and `trigger_window` values, e.g. `last_15m` . Can only be used for, and are required for, anomaly monitors.",
+				Validators: []validator.List{
+					listvalidator.SizeAtMost(1),
+				},
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"recovery_window": schema.StringAttribute{
+							Description: "Describes how long an anomalous metric must be normal before the alert recovers.",
+							Optional:    true,
+						},
+						"trigger_window": schema.StringAttribute{
+							Description: "Describes how long a metric must be anomalous before an alert triggers.",
+							Optional:    true,
+						},
+					},
+				},
+			},
+			"scheduling_options": schema.ListNestedBlock{
+				Description: "Configuration options for scheduling.",
+				Validators: []validator.List{
+					listvalidator.SizeAtMost(1),
+				},
+				NestedObject: schema.NestedBlockObject{
+					Blocks: map[string]schema.Block{
+						"evaluation_window": schema.ListNestedBlock{
+							MarkdownDescription: "Configuration options for the evaluation window. If `hour_starts` is set, no other fields may be set. Otherwise, `day_starts` and `month_starts` must be set together.",
+							NestedObject: schema.NestedBlockObject{
+								Attributes: map[string]schema.Attribute{
+									"day_starts": schema.StringAttribute{
+										Optional:    true,
+										Description: "The time of the day at which a one day cumulative evaluation window starts. Must be defined in UTC time in `HH:mm` format.",
+										Validators: []validator.String{
+											stringvalidator.RegexMatches(regexp.MustCompile(`^\d{2}:\d{2}$`), "must be HH:mm"),
+										},
+									},
+									"month_starts": schema.Int32Attribute{
+										Optional:    true,
+										Description: "The day of the month at which a one month cumulative evaluation window starts. Must be a value of 1.",
+									},
+									"hour_starts": schema.Int32Attribute{
+										Optional:    true,
+										Description: "The minute of the hour at which a one hour cumulative evaluation window starts. Must be between 0 and 59.",
+										Validators: []validator.Int32{
+											int32validator.Between(0, 59),
+										},
+									},
+									"timezone": schema.StringAttribute{
+										Optional:    true,
+										Description: "The timezone for the cumulative evaluation window start time.",
+									},
+								},
+							},
+						},
+						"custom_schedule": schema.ListNestedBlock{
+							MarkdownDescription: "Configuration options for the custom schedules. If `start` is omitted, the monitor creation time will be used.",
+							NestedObject: schema.NestedBlockObject{
+								Blocks: map[string]schema.Block{
+									"recurrence": schema.ListNestedBlock{
+										Description: "A list of recurrence definitions. Length must be 1.",
+										Validators: []validator.List{
+											listvalidator.IsRequired(),
+											listvalidator.SizeAtMost(1),
+										},
+										NestedObject: schema.NestedBlockObject{
+											Attributes: map[string]schema.Attribute{
+												"rrule": schema.StringAttribute{
+													Description: "Must be a valid `rrule`. See API docs for supported fields",
+													Required:    true,
+												},
+												"start": schema.StringAttribute{
+													MarkdownDescription: "Time to start recurrence cycle. Similar to DTSTART. Expected format 'YYYY-MM-DDThh:mm:ss'",
+													Optional:            true,
+													Validators: []validator.String{
+														stringvalidator.RegexMatches(
+															regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$`),
+															"must be YYYY-MM-DDThh:mm:ss",
+														),
+													},
+												},
+												"timezone": schema.StringAttribute{
+													MarkdownDescription: "'tz database' format. Example: `America/New_York` or `UTC`",
+													Required:            true,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			"variables": schema.ListNestedBlock{
+				Validators: []validator.List{
+					listvalidator.SizeAtMost(1),
+				},
+				NestedObject: schema.NestedBlockObject{
+					Blocks: map[string]schema.Block{
+						"event_query": schema.ListNestedBlock{
+							Description:  "A timeseries formula and functions events query.",
+							NestedObject: r.variablesEventQueryNestedObject(),
+						},
+						"cloud_cost_query": schema.ListNestedBlock{
+							Description: "The Cloud Cost query using formulas and functions.",
+							Validators: []validator.List{
+								listvalidator.SizeAtMost(5),
+							},
+							NestedObject: schema.NestedBlockObject{
+								Attributes: map[string]schema.Attribute{
+									"data_source": schema.StringAttribute{
+										Required:    true,
+										Description: "The data source for cloud cost queries.",
+										Validators: []validator.String{
+											stringvalidator.OneOf(r.getAllowCloudCostDataSource()...),
+										},
+									},
+									"query": schema.StringAttribute{
+										Required:    true,
+										Description: "The cloud cost query definition.",
+									},
+									"aggregator": schema.StringAttribute{
+										Optional:    true,
+										Description: "The aggregation methods available for cloud cost queries.",
+										Validators: []validator.String{
+											stringvalidator.OneOf(r.getAllowCloudCostAggregator()...),
+										},
+									},
+									"name": schema.StringAttribute{
+										Required:    true,
+										Description: "The name of the query for use in formulas.",
+									},
+								},
+							},
+						},
+						"data_quality_query": schema.ListNestedBlock{
+							Description: "The Data Quality query using formulas and functions.",
+							Validators: []validator.List{
+								listvalidator.SizeAtMost(5),
+							},
+							NestedObject: schema.NestedBlockObject{
+								Attributes: map[string]schema.Attribute{
+									"name": schema.StringAttribute{
+										Required:    true,
+										Description: "The name of the query for use in formulas.",
+									},
+									"data_source": schema.StringAttribute{
+										Required:    true,
+										Description: "The data source for data quality queries. Valid value is `data_quality_metrics`.",
+										Validators: []validator.String{
+											stringvalidator.OneOf(r.getAllowDataQualityDataSource()...),
+										},
+									},
+									"schema_version": schema.StringAttribute{
+										Optional:    true,
+										Description: "Schema version for the data quality query.",
+									},
+									"measure": schema.StringAttribute{
+										Required:    true,
+										Description: "The measure to query. Common values include `bytes`, `cardinality`, `custom`, `freshness`, `max`, `mean`, `min`, `nullness`, `percent_negative`, `percent_zero`, `row_count`, `stddev`, `sum`, `uniqueness`. Additional values may be supported.",
+									},
+									"filter": schema.StringAttribute{
+										Required:    true,
+										Description: "Filter expression used to match on data entities. Uses AAstra query syntax.",
+									},
+									"scope": schema.StringAttribute{
+										Optional:    true,
+										Description: "Optional scoping expression to further filter metrics.",
+									},
+									"group_by": schema.ListAttribute{
+										Optional:    true,
+										ElementType: types.StringType,
+										Description: "Optional grouping fields for aggregation.",
+									},
+								},
+								Blocks: map[string]schema.Block{
+									"monitor_options": schema.ListNestedBlock{
+										Description: "Monitor configuration options for data quality queries.",
+										Validators: []validator.List{
+											listvalidator.SizeAtMost(1),
+										},
+										NestedObject: schema.NestedBlockObject{
+											Attributes: map[string]schema.Attribute{
+												"custom_sql": schema.StringAttribute{
+													Optional:    true,
+													Description: "Custom SQL query for the monitor.",
+												},
+												"custom_where": schema.StringAttribute{
+													Optional:    true,
+													Description: "Custom WHERE clause for the query.",
+												},
+												"group_by_columns": schema.ListAttribute{
+													Optional:    true,
+													ElementType: types.StringType,
+													Description: "Columns to group results by.",
+												},
+												"crontab_override": schema.StringAttribute{
+													Optional:    true,
+													Description: "Crontab expression to override the default schedule.",
+												},
+												"model_type_override": schema.StringAttribute{
+													Optional:    true,
+													Description: "Override for the model type. Valid values are `freshness`, `percentage`, `any`.",
+												},
+												"sensitivity": schema.Float64Attribute{
+													Optional:    true,
+													Description: "Sensitivity of the anomaly detection model, expressed as a multiplier on the width of the predicted bounds. Higher values widen the bounds and produce fewer alerts; lower values tighten them and produce more alerts. Defaults to `3.0`.",
+												},
+											},
+											Blocks: map[string]schema.Block{
+												"source_to_target_config": schema.ListNestedBlock{
+													Description: "Compare the same measure across two data entities and alert on the difference between them.",
+													Validators: []validator.List{
+														listvalidator.SizeAtMost(1),
+													},
+													NestedObject: schema.NestedBlockObject{
+														Attributes: map[string]schema.Attribute{
+															"diff_type": schema.StringAttribute{
+																Required:    true,
+																Description: "How the difference between the source and target measures is computed. Valid values are `absolute`, `diff_percent`.",
+															},
+															"entity_type": schema.StringAttribute{
+																Required:    true,
+																Description: "Type of the data entities being compared.",
+															},
+														},
+														Blocks: map[string]schema.Block{
+															"source": schema.ListNestedBlock{
+																Description: "Measure configuration for the source entity.",
+																Validators: []validator.List{
+																	listvalidator.SizeAtMost(1),
+																},
+																NestedObject: dataQualityEntityMetricConfigBlock(),
+															},
+															"target": schema.ListNestedBlock{
+																Description: "Measure configuration for the target entity.",
+																Validators: []validator.List{
+																	listvalidator.SizeAtMost(1),
+																},
+																NestedObject: dataQualityEntityMetricConfigBlock(),
+															},
+														},
+													},
+												},
+												"model_configuration": schema.ListNestedBlock{
+													Description: "Tuning options for the anomaly detection model used by the monitor.",
+													Validators: []validator.List{
+														listvalidator.SizeAtMost(1),
+													},
+													NestedObject: schema.NestedBlockObject{
+														Attributes: map[string]schema.Attribute{
+															"auto_resolve_days": schema.Int32Attribute{
+																Optional:    true,
+																Description: "Number of days after which an open alert is automatically resolved. When unset, alerts stay open until the measure returns within bounds.",
+															},
+															"enable_flatline_detection": schema.BoolAttribute{
+																Optional:    true,
+																Description: "Whether to alert when the measure stops changing entirely. Defaults to `true`.",
+															},
+															"function": schema.StringAttribute{
+																Optional:    true,
+																Description: "Function applied to the measure before it is compared against the predicted bounds. Valid values are `DIFF`, `DIFF_PERCENT`.",
+															},
+															"min_lower_bound_size": schema.Float64Attribute{
+																Optional:    true,
+																Description: "Minimum distance between the predicted value and the lower bound. Widening the lower bound to at least this size suppresses alerts on small downward deviations. When unset, no minimum is enforced.",
+															},
+															"min_upper_bound_size": schema.Float64Attribute{
+																Optional:    true,
+																Description: "Minimum distance between the predicted value and the upper bound. Widening the upper bound to at least this size suppresses alerts on small upward deviations. When unset, no minimum is enforced.",
+															},
+															"model_bounds_override": schema.StringAttribute{
+																Optional:    true,
+																Description: "Restricts which predicted bound the monitor alerts on. When unset, the monitor alerts on both. Valid values are `UPPER_ONLY`, `LOWER_ONLY`.",
+															},
+														},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+						"aggregate_augmented_query": schema.ListNestedBlock{
+							Description: "Aggregate-augmented composite query variables (reference table augment joined to a metrics or events base query).",
+							NestedObject: schema.NestedBlockObject{
+								Attributes: map[string]schema.Attribute{
+									"name": schema.StringAttribute{
+										Optional:    true,
+										Description: "Name of the query for use in formulas.",
+									},
+									"data_source": schema.StringAttribute{
+										Required:    true,
+										Description: "Must be `aggregate_augmented_query`.",
+										Validators: []validator.String{
+											stringvalidator.OneOf(r.getAllowAggregateAugmentedDataSource()...),
+										},
+									},
+								},
+								Blocks: map[string]schema.Block{
+									"augment_reference_table": schema.ListNestedBlock{
+										Description: "Reference table augment query. Conflicts with `augment_event_query` in configuration.",
+										Validators: []validator.List{
+											listvalidator.SizeAtMost(1),
+										},
+										NestedObject: schema.NestedBlockObject{
+											Attributes: map[string]schema.Attribute{
+												"name": schema.StringAttribute{
+													Optional:    true,
+													Description: "Name of the augment sub-query.",
+												},
+												"data_source": schema.StringAttribute{
+													Required:    true,
+													Description: "Must be `reference_table`.",
+													Validators: []validator.String{
+														stringvalidator.OneOf(r.getAllowReferenceTableDataSource()...),
+													},
+												},
+												"table_name": schema.StringAttribute{
+													Required:    true,
+													Description: "Name of the reference table.",
+												},
+												"query_filter": schema.StringAttribute{
+													Optional:    true,
+													Description: "Optional filter expression for the reference table query.",
+												},
+											},
+											Blocks: map[string]schema.Block{
+												"columns": schema.ListNestedBlock{
+													Description: "Columns to retrieve from the reference table.",
+													NestedObject: schema.NestedBlockObject{
+														Attributes: map[string]schema.Attribute{
+															"name": schema.StringAttribute{
+																Required:    true,
+																Description: "Reference table column name.",
+															},
+															"alias": schema.StringAttribute{
+																Optional:    true,
+																Description: "Optional alias for the column.",
+															},
+														},
+													},
+												},
+											},
+										},
+									},
+									"augment_event_query": schema.ListNestedBlock{
+										Description: "Events augment query. Conflicts with `augment_reference_table` in configuration.",
+										Validators: []validator.List{
+											listvalidator.SizeAtMost(1),
+										},
+										NestedObject: r.variablesEventQueryNestedObject(),
+									},
+									"base_metrics_query": schema.ListNestedBlock{
+										Description: "Metrics base query. Conflicts with `base_event_query` in configuration.",
+										Validators: []validator.List{
+											listvalidator.SizeAtMost(1),
+										},
+										NestedObject: schema.NestedBlockObject{
+											Attributes: map[string]schema.Attribute{
+												"data_source": schema.StringAttribute{
+													Required:    true,
+													Description: "The data source for metrics queries.",
+													Validators: []validator.String{
+														stringvalidator.OneOf(r.getAllowMetricsDataSource()...),
+													},
+												},
+												"name": schema.StringAttribute{
+													Optional:    true,
+													Description: "The name of the query for use in formulas.",
+												},
+												"query": schema.StringAttribute{
+													Required:    true,
+													Description: "The metrics query definition.",
+												},
+												"aggregator": schema.StringAttribute{
+													Optional:    true,
+													Description: "The aggregation method for metrics queries.",
+													Validators: []validator.String{
+														stringvalidator.OneOf(r.getAllowMetricsAggregator()...),
+													},
+												},
+											},
+										},
+									},
+									"base_event_query": schema.ListNestedBlock{
+										Description: "Events base query. Conflicts with `base_metrics_query` in configuration.",
+										Validators: []validator.List{
+											listvalidator.SizeAtMost(1),
+										},
+										NestedObject: r.variablesEventQueryNestedObject(),
+									},
+									"join_condition": schema.ListNestedBlock{
+										Description: "Join condition between augment and base queries.",
+										Validators: []validator.List{
+											listvalidator.IsRequired(),
+											listvalidator.SizeAtMost(1),
+										},
+										NestedObject: schema.NestedBlockObject{
+											Attributes: map[string]schema.Attribute{
+												"augment_attribute": schema.StringAttribute{
+													Required:    true,
+													Description: "Attribute from the augment query to join on.",
+												},
+												"base_attribute": schema.StringAttribute{
+													Required:    true,
+													Description: "Attribute from the base query to join on.",
+												},
+												"join_type": schema.StringAttribute{
+													Required:    true,
+													Description: "Join type (for example `inner`).",
+													Validators: []validator.String{
+														stringvalidator.OneOf(r.getAllowAggregateJoinType()...),
+													},
+												},
+											},
+										},
+									},
+									"compute": schema.ListNestedBlock{
+										Description: "Compute aggregations for the aggregate-augmented query.",
+										Validators: []validator.List{
+											listvalidator.IsRequired(),
+										},
+										NestedObject: schema.NestedBlockObject{
+											Attributes: map[string]schema.Attribute{
+												"aggregation": schema.StringAttribute{
+													Required:    true,
+													Description: "The aggregation methods for compute steps.",
+													Validators: []validator.String{
+														stringvalidator.OneOf(r.getAllowEventQueryAggregation()...),
+													},
+												},
+												"interval": schema.Int64Attribute{
+													Optional:    true,
+													Description: "A time interval in milliseconds.",
+												},
+												"metric": schema.StringAttribute{
+													Optional:    true,
+													Description: "The measurable attribute to compute.",
+												},
+												"name": schema.StringAttribute{
+													Optional:    true,
+													Description: "The name assigned to this aggregation when multiple aggregations are defined.",
+												},
+											},
+										},
+									},
+									"group_by": schema.ListNestedBlock{
+										Description: "Group by options for the aggregate-augmented query. At least one block is required.",
+										Validators: []validator.List{
+											listvalidator.IsRequired(),
+											listvalidator.SizeAtLeast(1),
+										},
+										NestedObject: schema.NestedBlockObject{
+											Attributes: map[string]schema.Attribute{
+												"facet": schema.StringAttribute{
+													Required:    true,
+													Description: "The facet to group by.",
+												},
+												"source": schema.StringAttribute{
+													Optional:    true,
+													Description: "Identifies which sub-query this facet refers to (for example `filter_query`).",
+												},
+												"limit": schema.Int64Attribute{
+													Optional:    true,
+													Description: "The number of groups to return.",
+												},
+											},
+											Blocks: map[string]schema.Block{
+												"sort": schema.ListNestedBlock{
+													Description: "Sort options for group by.",
+													Validators: []validator.List{
+														listvalidator.SizeAtMost(1),
+													},
+													NestedObject: schema.NestedBlockObject{
+														Attributes: map[string]schema.Attribute{
+															"aggregation": schema.StringAttribute{
+																Required:    true,
+																Description: "The aggregation methods for sorting.",
+																Validators: []validator.String{
+																	stringvalidator.OneOf(r.getAllowEventQueryAggregation()...),
+																},
+															},
+															"metric": schema.StringAttribute{
+																Optional:    true,
+																Description: "The metric used for sorting group by results.",
+															},
+															"order": schema.StringAttribute{
+																Optional:    true,
+																Description: "Direction of sort.",
+																Validators: []validator.String{
+																	stringvalidator.OneOf(r.getAllowEventQueryOrder()...),
+																},
+															},
+														},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+						"aggregate_filtered_query": r.variablesAggregateFilteredQueryListBlock(),
+						"data_jobs_query": schema.ListNestedBlock{
+							Description: "The Data Jobs query using formulas and functions.",
+							Validators: []validator.List{
+								listvalidator.SizeAtMost(5),
+							},
+							NestedObject: schema.NestedBlockObject{
+								Attributes: map[string]schema.Attribute{
+									"name": schema.StringAttribute{
+										Required:    true,
+										Description: "Name of the query for use in formulas. Must be `run_query`.",
+									},
+									"jobs_query": schema.StringAttribute{
+										Required:    true,
+										Description: "Filter expression used to select the jobs to monitor.",
+									},
+									"job_type": schema.StringAttribute{
+										Required:    true,
+										Description: "The type of job being monitored. Valid values include `databricks.job`, `spark.application`, `airflow.dag`, `dbt.job`, `glue.job`. Custom job types are supported with the `custom.ol.` prefix.",
+									},
+									"query_dialect": schema.StringAttribute{
+										Required:    true,
+										Description: "Query dialect for data jobs queries. Currently only `metric` is supported.",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func (r *monitorResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, frameworkPath.Root("id"), req, resp)
+}
+
+func (r *monitorResource) Read(ctx context.Context, request resource.ReadRequest, response *resource.ReadResponse) {
+	var state monitorResourceModel
+	response.Diagnostics.Append(request.State.Get(ctx, &state)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	id, diags := r.getMonitorId(&state)
+	if diags.HasError() {
+		return
+	}
+	resp, httpResp, err := r.Api.GetMonitor(r.Auth, *id, *datadogV1.NewGetMonitorOptionalParameters().WithWithAssets(true))
+	if err != nil {
+		if httpResp != nil && httpResp.StatusCode == 404 {
+			response.State.RemoveResource(ctx)
+			return
+		}
+		response.Diagnostics.Append(utils.FrameworkErrorDiag(err, "error retrieving Monitor"))
+		return
+	}
+
+	r.updateState(ctx, &state, &resp)
+
+	// Save data into Terraform state
+	response.Diagnostics.Append(response.State.Set(ctx, &state)...)
+}
+
+func (r *monitorResource) Create(ctx context.Context, request resource.CreateRequest, response *resource.CreateResponse) {
+	var state monitorResourceModel
+	response.Diagnostics.Append(request.Plan.Get(ctx, &state)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+	monitorBody, _, diags := r.buildMonitorStruct(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	resp, _, err := r.Api.CreateMonitor(r.Auth, *monitorBody)
+	if err != nil {
+		response.Diagnostics.Append(utils.FrameworkErrorDiag(err, "error retrieving Monitor"))
+		return
+	}
+	r.updateState(ctx, &state, &resp)
+
+	// Save data into Terraform state
+	response.Diagnostics.Append(response.State.Set(ctx, &state)...)
+}
+
+func (r *monitorResource) Update(ctx context.Context, request resource.UpdateRequest, response *resource.UpdateResponse) {
+	var state monitorResourceModel
+	response.Diagnostics.Append(request.Plan.Get(ctx, &state)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	id, diags := r.getMonitorId(&state)
+	if diags.HasError() {
+		return
+	}
+	_, updateRequestBody, diags := r.buildMonitorStruct(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	resp, _, err := r.Api.UpdateMonitor(r.Auth, *id, *updateRequestBody)
+	if err != nil {
+		response.Diagnostics.Append(utils.FrameworkErrorDiag(err, "error retrieving Monitor"))
+		return
+	}
+	r.updateState(ctx, &state, &resp)
+
+	// Save data into Terraform state
+	response.Diagnostics.Append(response.State.Set(ctx, &state)...)
+}
+
+func (r *monitorResource) Delete(ctx context.Context, request resource.DeleteRequest, response *resource.DeleteResponse) {
+	var state monitorResourceModel
+	response.Diagnostics.Append(request.State.Get(ctx, &state)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	id, diags := r.getMonitorId(&state)
+	if diags.HasError() {
+		return
+	}
+	var httpResp *http.Response
+	var err error
+	if !state.ForceDelete.IsNull() && state.ForceDelete.ValueBool() {
+		_, httpResp, err = r.Api.DeleteMonitor(r.Auth, *id, *datadogV1.NewDeleteMonitorOptionalParameters().WithForce("true"))
+	} else {
+		_, httpResp, err = r.Api.DeleteMonitor(r.Auth, *id)
+	}
+	if err != nil {
+		if httpResp != nil && httpResp.StatusCode == 404 {
+			return
+		}
+		response.Diagnostics.Append(utils.FrameworkErrorDiag(err, "error deleting monitor"))
+		return
+	}
+}
+
+func (r *monitorResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	// If the plan is null (resource is being destroyed) or no state exists yet, return early
+	// as there's nothing to modify
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+	var plan, state monitorResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+
+	if !req.State.Raw.IsNull() {
+		resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	// effective_tags = tags + default_tags. It is Computed and is refreshed from the API on every
+	// Read, so it is the field that mirrors what's actually on the monitor (and the value we send).
+	combinedTags, diags := fwutils.CombineTags(ctx, plan.Tags, r.DefaultTags)
+	if diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+		return
+	}
+	// ignore_tag_keys: re-inject the prior values of ignored tag keys into effective_tags so
+	// Terraform neither reports drift on those keys nor strips them on apply. We operate on
+	// effective_tags (NOT the user-owned `tags`) because effective_tags is already Computed and
+	// already mirrors the API, so its prior state legally holds the live value — planning it here
+	// satisfies the framework's "computed value must equal config or own prior state" rule.
+	// `tags` is left exactly as the user wrote it. On create there is no prior state, so this is
+	// a no-op.
+	//
+	// Precedence: the resource-level ignore_tag_keys is unioned with the provider-level list;
+	// the effective set is the union of both lists.
+	ignoreKeys := append([]string{}, r.IgnoreTagKeys...)
+	if !plan.IgnoreTagKeys.IsNull() && !plan.IgnoreTagKeys.IsUnknown() {
+		var resourceKeys []string
+		resp.Diagnostics.Append(plan.IgnoreTagKeys.ElementsAs(ctx, &resourceKeys, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		ignoreKeys = append(ignoreKeys, resourceKeys...)
+	}
+	effectiveTags, diags := fwutils.ApplyIgnoreTagKeys(ctx, combinedTags, state.EffectiveTags, ignoreKeys)
+	if diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+		return
+	}
+	// Only set effective_tags on the response plan — Create/Update read it from there. Do NOT
+	// assign plan.EffectiveTags locally: the local `plan` is fed to buildMonitorStruct for the
+	// validate call below, and the original code left EffectiveTags unknown there so validate is
+	// sent without tags. Setting it would change every monitor's validate request body and break
+	// all pre-recorded monitor cassettes.
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, frameworkPath.Root("effective_tags"), effectiveTags)...)
+
+	if !plan.Validate.IsNull() && !plan.Validate.ValueBool() {
+		// Explicitly skip validation
+		return
+	}
+	m, _, diags := r.buildMonitorStruct(ctx, &plan)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	isCreation := state.ID.IsNull()
+	var httpresp *http.Response
+	var err error
+	log.Printf("[DEBUG] monitor/validate m=%#v", m)
+	if !isCreation {
+		id, diags := r.getMonitorId(&state)
+		if diags.HasError() {
+			return
+		}
+		_, httpresp, err = r.Api.ValidateExistingMonitor(r.Auth, *id, *m)
+	} else {
+		_, httpresp, err = r.Api.ValidateMonitor(r.Auth, *m)
+	}
+	if err != nil {
+		if httpresp != nil && (httpresp.StatusCode == 502 || httpresp.StatusCode == 504) {
+			resp.Diagnostics.Append(utils.FrameworkErrorDiag(err, "error validating monitor, retrying"))
+		}
+		resp.Diagnostics.Append(utils.FrameworkErrorDiag(err, "error validating monitor"))
+	}
+}
+
+func (r *monitorResource) buildMonitorStruct(ctx context.Context, state *monitorResourceModel) (*datadogV1.Monitor, *datadogV1.MonitorUpdateRequest, diag.Diagnostics) {
+	diags := diag.Diagnostics{}
+	if !state.NotifyNoData.ValueBool() && !state.NoDataTimeframe.IsNull() {
+		diags.AddAttributeError(frameworkPath.Root("no_data_timeframe"), "`notify_no_data` has to be set to true with `no_data_timeframe`.", "")
+		return nil, nil, diags
+	}
+	message := strings.TrimSpace(state.Message.ValueString())
+	query := strings.TrimSpace(state.Query.ValueString())
+
+	monitorType := datadogV1.MonitorType(state.Type.ValueString())
+
+	m := datadogV1.NewMonitor(query, monitorType)
+	m.SetName(state.Name.ValueString())
+	m.SetMessage(message)
+
+	u := datadogV1.NewMonitorUpdateRequest()
+	u.SetType(monitorType)
+	u.SetQuery(query)
+	u.SetName(state.Name.ValueString())
+	u.SetMessage(message)
+
+	if state.DraftStatus.ValueString() != "" {
+		m.SetDraftStatus(datadogV1.MonitorDraftStatus(state.DraftStatus.ValueString()))
+		u.SetDraftStatus(datadogV1.MonitorDraftStatus(state.DraftStatus.ValueString()))
+	}
+
+	if v := r.parseInt(state.Priority); v != nil {
+		m.SetPriority(*v)
+		u.SetPriority(*v)
+	} else {
+		m.SetPriorityNil()
+		u.SetPriorityNil()
+	}
+	fwutils.SetOptStringList(state.EffectiveTags, m.SetTags, ctx)
+	fwutils.SetOptStringList(state.EffectiveTags, u.SetTags, ctx)
+	fwutils.SetOptStringList(state.RestrictedRoles, m.SetRestrictedRoles, ctx)
+	fwutils.SetOptStringList(state.RestrictedRoles, u.SetRestrictedRoles, ctx)
+	// This handles an edge case where an empty array produce a 400 error,
+	// so converting it to nil in the request.
+	if restrictedRoles, ok := m.GetRestrictedRolesOk(); ok && len(*restrictedRoles) == 0 {
+		m.SetRestrictedRolesNil()
+		u.SetRestrictedRolesNil()
+	}
+
+	// Assets
+	if assets := r.buildAssetsStruct(ctx, state.MonitorAssets); len(assets) > 0 {
+		m.SetAssets(assets)
+		u.SetAssets(assets)
+	}
+
+	monitorOptions := datadogV1.MonitorOptions{}
+	if !state.EscalationMessage.IsNull() {
+		escalationMessage := strings.TrimSpace(state.EscalationMessage.ValueString())
+		monitorOptions.SetEscalationMessage(escalationMessage)
+	}
+	if !state.OnMissingData.IsNull() {
+		monitorOptions.SetOnMissingData(datadogV1.OnMissingDataOption(state.OnMissingData.ValueString()))
+	}
+	if !state.RenotifyStatuses.IsNull() {
+		var renotifyStatusesStr []string
+		diags.Append(state.RenotifyStatuses.ElementsAs(ctx, &renotifyStatusesStr, false)...)
+		renotifyStatuses := make([]datadogV1.MonitorRenotifyStatusType, 0)
+		for _, str := range renotifyStatusesStr {
+			renotifyStatuses = append(renotifyStatuses, datadogV1.MonitorRenotifyStatusType(str))
+		}
+		monitorOptions.SetRenotifyStatuses(renotifyStatuses)
+	}
+	if !state.NotificationPresetName.IsNull() {
+		monitorOptions.SetNotificationPresetName(datadogV1.MonitorOptionsNotificationPresets(state.NotificationPresetName.ValueString()))
+	}
+	fwutils.SetOptBool(state.RequireFullWindow, monitorOptions.SetRequireFullWindow)
+	fwutils.SetOptInt64(state.NoDataTimeframe, monitorOptions.SetNoDataTimeframe)
+	fwutils.SetOptStringList(state.NotifyBy, monitorOptions.SetNotifyBy, ctx)
+	fwutils.SetOptBool(state.NotifyNoData, monitorOptions.SetNotifyNoData)
+	fwutils.SetOptString(state.GroupRetentionDuration, monitorOptions.SetGroupRetentionDuration)
+	fwutils.SetOptInt64(state.NewGroupDelay, monitorOptions.SetNewGroupDelay)
+	fwutils.SetOptInt64(state.NewHostDelay, monitorOptions.SetNewHostDelay)
+	fwutils.SetOptInt64(state.EvaluationDelay, monitorOptions.SetEvaluationDelay)
+	fwutils.SetOptInt64(state.RenotifyInterval, monitorOptions.SetRenotifyInterval)
+	fwutils.SetOptInt64(state.RenotifyOccurrences, monitorOptions.SetRenotifyOccurrences)
+	fwutils.SetOptBool(state.NotifyAudit, monitorOptions.SetNotifyAudit)
+	fwutils.SetOptInt64(state.TimeoutH, monitorOptions.SetTimeoutH)
+	fwutils.SetOptBool(state.IncludeTags, monitorOptions.SetIncludeTags)
+	fwutils.SetOptBool(state.GroupbySimpleMonitor, monitorOptions.SetGroupbySimpleMonitor)
+	fwutils.SetOptBool(state.EnableLogsSample, monitorOptions.SetEnableLogsSample)
+	fwutils.SetOptBool(state.EnableSamples, monitorOptions.SetEnableSamples)
+
+	if state.MonitorThresholds != nil {
+		thresholdObj := state.MonitorThresholds[0]
+		var thresholds = datadogV1.MonitorThresholds{}
+		if v := r.parseFloat(thresholdObj.Ok); v != nil {
+			thresholds.SetOk(*v)
+		}
+		if v := r.parseFloat(thresholdObj.Unknown); v != nil {
+			thresholds.SetUnknown(*v)
+		}
+		if v := r.parseFloat(thresholdObj.Critical); v != nil {
+			thresholds.SetCritical(*v)
+		}
+		if v := r.parseFloat(thresholdObj.CriticalRecovery); v != nil {
+			thresholds.SetCriticalRecovery(*v)
+		}
+		if v := thresholdObj.CriticalQuery.ValueString(); v != "" {
+			thresholds.SetCriticalQuery(v)
+		}
+		if v := thresholdObj.CriticalRecoveryQuery.ValueString(); v != "" {
+			thresholds.SetCriticalRecoveryQuery(v)
+		}
+		if v := r.parseFloat(thresholdObj.Warning); v != nil {
+			thresholds.SetWarning(*v)
+		}
+		if v := r.parseFloat(thresholdObj.WarningRecovery); v != nil {
+			thresholds.SetWarningRecovery(*v)
+		}
+		monitorOptions.SetThresholds(thresholds)
+	}
+	if state.MonitorThresholdWindows != nil {
+		thresholdWindow := state.MonitorThresholdWindows[0]
+		thresholdWindowOptions := datadogV1.MonitorThresholdWindowOptions{}
+		fwutils.SetOptString(thresholdWindow.RecoveryWindow, thresholdWindowOptions.SetRecoveryWindow)
+		fwutils.SetOptString(thresholdWindow.TriggerWindow, thresholdWindowOptions.SetTriggerWindow)
+		monitorOptions.SetThresholdWindows(thresholdWindowOptions)
+	}
+	if schedulingOptionStruct := r.buildSchedulingOptionsStruct(ctx, state.SchedulingOptions); schedulingOptionStruct != nil {
+		monitorOptions.SetSchedulingOptions(*schedulingOptionStruct)
+	}
+	if variableStruct := r.buildVariablesStruct(ctx, state.Variables); variableStruct != nil {
+		monitorOptions.SetVariables(variableStruct)
+	}
+	m.SetOptions(monitorOptions)
+	u.SetOptions(monitorOptions)
+
+	return m, u, diags
+}
+
+func (r *monitorResource) buildSchedulingOptionsStruct(ctx context.Context, schedulingOptions []SchedulingOption) *datadogV1.MonitorOptionsSchedulingOptions {
+	if schedulingOptions == nil || len(schedulingOptions) == 0 {
+		return nil
+	}
+	schedulingOptionsReq := datadogV1.MonitorOptionsSchedulingOptions{}
+	schedulingOption := schedulingOptions[0]
+	if evalWindows := schedulingOption.EvaluationWindow; len(evalWindows) > 0 {
+		evaluationWindowReq := datadogV1.MonitorOptionsSchedulingOptionsEvaluationWindow{}
+		evalWindow := evalWindows[0]
+		fwutils.SetOptString(evalWindow.DayStarts, evaluationWindowReq.SetDayStarts)
+		fwutils.SetOptInt32(evalWindow.HourStarts, evaluationWindowReq.SetHourStarts)
+		fwutils.SetOptInt32(evalWindow.MonthStarts, evaluationWindowReq.SetMonthStarts)
+		fwutils.SetOptString(evalWindow.Timezone, evaluationWindowReq.SetTimezone)
+		schedulingOptionsReq.SetEvaluationWindow(evaluationWindowReq)
+	}
+	if customSchedules := schedulingOption.CustomSchedule; len(customSchedules) > 0 {
+		recurrencesReq := []datadogV1.MonitorOptionsCustomScheduleRecurrence{}
+		customSchedule := customSchedules[0]
+		for _, recurrence := range customSchedule.Recurrence {
+			recurrenceReq := datadogV1.MonitorOptionsCustomScheduleRecurrence{}
+			fwutils.SetOptString(recurrence.Rrule, recurrenceReq.SetRrule)
+			fwutils.SetOptString(recurrence.Start, recurrenceReq.SetStart)
+			fwutils.SetOptString(recurrence.Timezone, recurrenceReq.SetTimezone)
+			recurrencesReq = append(recurrencesReq, recurrenceReq)
+		}
+		schedulingOptionsReq.SetCustomSchedule(datadogV1.MonitorOptionsCustomSchedule{
+			Recurrences: recurrencesReq,
+		})
+	}
+	if schedulingOptionsReq.EvaluationWindow == nil && schedulingOptionsReq.CustomSchedule == nil {
+		return nil
+	}
+	return &schedulingOptionsReq
+}
+
+func (r *monitorResource) buildVariablesStruct(ctx context.Context, variables []Variable) []datadogV1.MonitorFormulaAndFunctionQueryDefinition {
+	if variables == nil || len(variables) == 0 {
+		return nil
+	}
+	variablesReq := []datadogV1.MonitorFormulaAndFunctionQueryDefinition{}
+	// we always have zero or one `variables`
+	variable := variables[0]
+	if eventQReq := r.buildEventQueryStruct(ctx, variable.EventQuery); len(eventQReq) > 0 {
+		variablesReq = append(variablesReq, eventQReq...)
+	}
+	if cloudCostReq := r.buildCloudCostQueryStruct(variable.CloudCostQuery); len(cloudCostReq) > 0 {
+		variablesReq = append(variablesReq, cloudCostReq...)
+	}
+	if dataQualityReq := r.buildDataQualityQueryStruct(ctx, variable.DataQualityQuery); len(dataQualityReq) > 0 {
+		variablesReq = append(variablesReq, dataQualityReq...)
+	}
+	if aggReq := r.buildAggregateAugmentedQueryStruct(ctx, variable.AggregateAugmentedQuery); len(aggReq) > 0 {
+		variablesReq = append(variablesReq, aggReq...)
+	}
+	if aggFil := r.buildAggregateFilteredQueryStruct(ctx, variable.AggregateFilteredQuery); len(aggFil) > 0 {
+		variablesReq = append(variablesReq, aggFil...)
+	}
+	if dataJobsReq := r.buildDataJobsQueryStruct(variable.DataJobsQuery); len(dataJobsReq) > 0 {
+		variablesReq = append(variablesReq, dataJobsReq...)
+	}
+	return variablesReq
+}
+
+func (r *monitorResource) buildEventQueryStruct(ctx context.Context, eventQs []EventQuery) []datadogV1.MonitorFormulaAndFunctionQueryDefinition {
+	if eventQs == nil || len(eventQs) == 0 {
+		return nil
+	}
+	variablesReq := []datadogV1.MonitorFormulaAndFunctionQueryDefinition{}
+	for _, eventQ := range eventQs {
+		variableReq := datadogV1.MonitorFormulaAndFunctionQueryDefinition{}
+		eventQueryReq := datadogV1.MonitorFormulaAndFunctionEventQueryDefinition{}
+		fwutils.SetOptString(eventQ.Name, eventQueryReq.SetName)
+		fwutils.SetOptStringList(eventQ.Indexes, eventQueryReq.SetIndexes, ctx)
+		if !eventQ.DataSource.IsNull() {
+			eventQueryReq.SetDataSource(datadogV1.MonitorFormulaAndFunctionEventsDataSource(eventQ.DataSource.ValueString()))
+		}
+		if search := eventQ.Search; search != nil {
+			searchReq := datadogV1.MonitorFormulaAndFunctionEventQueryDefinitionSearch{}
+			fwutils.SetOptString(search[0].Query, searchReq.SetQuery)
+			eventQueryReq.SetSearch(searchReq)
+		}
+		if computes := eventQ.Compute; len(computes) > 0 {
+			computeReq := datadogV1.MonitorFormulaAndFunctionEventQueryDefinitionCompute{}
+			compute := computes[0]
+			fwutils.SetOptInt64(compute.Interval, computeReq.SetInterval)
+			fwutils.SetOptString(compute.Metric, computeReq.SetMetric)
+			fwutils.SetOptString(compute.Name, computeReq.SetName)
+			if !compute.Aggregation.IsNull() {
+				computeReq.SetAggregation(datadogV1.MonitorFormulaAndFunctionEventAggregation(compute.Aggregation.ValueString()))
+			}
+			eventQueryReq.SetCompute(computeReq)
+		}
+		if groupBys := eventQ.GroupBy; len(groupBys) > 0 {
+			groupBysReq := []datadogV1.MonitorFormulaAndFunctionEventQueryGroupBy{}
+			for _, groupBy := range groupBys {
+				groupByReq := datadogV1.MonitorFormulaAndFunctionEventQueryGroupBy{}
+				fwutils.SetOptString(groupBy.Facet, groupByReq.SetFacet)
+				fwutils.SetOptString(groupBy.Source, groupByReq.SetSource)
+				fwutils.SetOptInt64(groupBy.Limit, groupByReq.SetLimit)
+				if sortList := groupBy.Sort; len(sortList) > 0 {
+					sortReq := datadogV1.MonitorFormulaAndFunctionEventQueryGroupBySort{}
+					sort := sortList[0]
+					fwutils.SetOptString(sort.Metric, sortReq.SetMetric)
+					if !sort.Aggregation.IsNull() {
+						sortReq.SetAggregation(datadogV1.MonitorFormulaAndFunctionEventAggregation(sort.Aggregation.ValueString()))
+					}
+					if !sort.Order.IsNull() {
+						sortReq.SetOrder(datadogV1.QuerySortOrder(sort.Order.ValueString()))
+					}
+					groupByReq.SetSort(sortReq)
+				}
+				groupBysReq = append(groupBysReq, groupByReq)
+			}
+			eventQueryReq.SetGroupBy(groupBysReq)
+		}
+		variableReq.MonitorFormulaAndFunctionEventQueryDefinition = &eventQueryReq
+		variablesReq = append(variablesReq, variableReq)
+	}
+	return variablesReq
+}
+
+func (r *monitorResource) buildCloudCostQueryStruct(cloudCostQs []CloudCostQuery) []datadogV1.MonitorFormulaAndFunctionQueryDefinition {
+	if cloudCostQs == nil || len(cloudCostQs) == 0 {
+		return nil
+	}
+	variablesReq := []datadogV1.MonitorFormulaAndFunctionQueryDefinition{}
+	for _, cloudCostQ := range cloudCostQs {
+		variableReq := datadogV1.MonitorFormulaAndFunctionQueryDefinition{}
+		cloudCostQueryReq := datadogV1.MonitorFormulaAndFunctionCostQueryDefinition{}
+		fwutils.SetOptString(cloudCostQ.Query, cloudCostQueryReq.SetQuery)
+		fwutils.SetOptString(cloudCostQ.Name, cloudCostQueryReq.SetName)
+		if !cloudCostQ.DataSource.IsNull() {
+			cloudCostQueryReq.SetDataSource(datadogV1.MonitorFormulaAndFunctionCostDataSource(cloudCostQ.DataSource.ValueString()))
+		}
+		if !cloudCostQ.Aggregator.IsNull() {
+			cloudCostQueryReq.SetAggregator(datadogV1.MonitorFormulaAndFunctionCostAggregator(cloudCostQ.Aggregator.ValueString()))
+		}
+		variableReq.MonitorFormulaAndFunctionCostQueryDefinition = &cloudCostQueryReq
+		variablesReq = append(variablesReq, variableReq)
+	}
+	return variablesReq
+}
+
+func (r *monitorResource) buildDataQualityQueryStruct(ctx context.Context, dataQualityQs []DataQualityQuery) []datadogV1.MonitorFormulaAndFunctionQueryDefinition {
+	if dataQualityQs == nil || len(dataQualityQs) == 0 {
+		return nil
+	}
+	variablesReq := []datadogV1.MonitorFormulaAndFunctionQueryDefinition{}
+	for _, dataQualityQ := range dataQualityQs {
+		variableReq := datadogV1.MonitorFormulaAndFunctionQueryDefinition{}
+		dataQualityQueryReq := datadogV1.MonitorFormulaAndFunctionDataQualityQueryDefinition{}
+		fwutils.SetOptString(dataQualityQ.Name, dataQualityQueryReq.SetName)
+		fwutils.SetOptString(dataQualityQ.Filter, dataQualityQueryReq.SetFilter)
+		fwutils.SetOptString(dataQualityQ.SchemaVersion, dataQualityQueryReq.SetSchemaVersion)
+		fwutils.SetOptString(dataQualityQ.Scope, dataQualityQueryReq.SetScope)
+		if !dataQualityQ.DataSource.IsNull() {
+			dataQualityQueryReq.SetDataSource(datadogV1.MonitorFormulaAndFunctionDataQualityDataSource(dataQualityQ.DataSource.ValueString()))
+		}
+		if !dataQualityQ.Measure.IsNull() {
+			dataQualityQueryReq.SetMeasure(dataQualityQ.Measure.ValueString())
+		}
+		// Group by
+		fwutils.SetOptStringList(dataQualityQ.GroupBy, dataQualityQueryReq.SetGroupBy, ctx)
+		// Monitor options
+		if monitorOpts := dataQualityQ.MonitorOptions; len(monitorOpts) > 0 {
+			monitorOptsReq := datadogV1.MonitorFormulaAndFunctionDataQualityMonitorOptions{}
+			opt := monitorOpts[0]
+			fwutils.SetOptString(opt.CustomSql, monitorOptsReq.SetCustomSql)
+			fwutils.SetOptString(opt.CustomWhere, monitorOptsReq.SetCustomWhere)
+			fwutils.SetOptString(opt.CrontabOverride, monitorOptsReq.SetCrontabOverride)
+			fwutils.SetOptStringList(opt.GroupByColumns, monitorOptsReq.SetGroupByColumns, ctx)
+			if !opt.ModelTypeOverride.IsNull() {
+				monitorOptsReq.SetModelTypeOverride(datadogV1.MonitorFormulaAndFunctionDataQualityModelTypeOverride(opt.ModelTypeOverride.ValueString()))
+			}
+			fwutils.SetOptFloat64(opt.Sensitivity, monitorOptsReq.SetSensitivity)
+			if len(opt.SourceToTargetConfig) > 0 {
+				monitorOptsReq.SetSourceToTargetConfig(*r.buildDataQualitySourceToTargetConfig(ctx, opt.SourceToTargetConfig[0]))
+			}
+			if len(opt.ModelConfiguration) > 0 {
+				monitorOptsReq.SetModelConfiguration(*r.buildDataQualityModelConfiguration(opt.ModelConfiguration[0]))
+			}
+			dataQualityQueryReq.SetMonitorOptions(monitorOptsReq)
+		}
+		variableReq.MonitorFormulaAndFunctionDataQualityQueryDefinition = &dataQualityQueryReq
+		variablesReq = append(variablesReq, variableReq)
+	}
+	return variablesReq
+}
+
+func (r *monitorResource) buildAggregateAugmentedQueryStruct(ctx context.Context, aggs []AggregateAugmentedQuery) []datadogV1.MonitorFormulaAndFunctionQueryDefinition {
+	if len(aggs) == 0 {
+		return nil
+	}
+	out := []datadogV1.MonitorFormulaAndFunctionQueryDefinition{}
+	for _, a := range aggs {
+		var augment datadogV1.MonitorFormulaAndFunctionAggregateAugmentQuery
+		if arts := a.AugmentReferenceTable; len(arts) > 0 {
+			art := arts[0]
+			ref := datadogV1.NewMonitorFormulaAndFunctionReferenceTableQueryDefinition(
+				datadogV1.MonitorFormulaAndFunctionReferenceTableDataSource(art.DataSource.ValueString()),
+				art.TableName.ValueString(),
+			)
+			fwutils.SetOptString(art.Name, ref.SetName)
+			fwutils.SetOptString(art.QueryFilter, ref.SetQueryFilter)
+			if cols := art.Columns; len(cols) > 0 {
+				colOut := make([]datadogV1.MonitorFormulaAndFunctionReferenceTableColumn, 0, len(cols))
+				for _, c := range cols {
+					col := datadogV1.NewMonitorFormulaAndFunctionReferenceTableColumn(c.Name.ValueString())
+					fwutils.SetOptString(c.Alias, col.SetAlias)
+					colOut = append(colOut, *col)
+				}
+				ref.SetColumns(colOut)
+			}
+			augment = datadogV1.MonitorFormulaAndFunctionReferenceTableQueryDefinitionAsMonitorFormulaAndFunctionAggregateAugmentQuery(ref)
+		} else if aeq := r.buildEventQueryStruct(ctx, a.AugmentEventQuery); len(aeq) > 0 {
+			augment = datadogV1.MonitorFormulaAndFunctionEventQueryDefinitionAsMonitorFormulaAndFunctionAggregateAugmentQuery(aeq[0].MonitorFormulaAndFunctionEventQueryDefinition)
+		} else {
+			continue
+		}
+
+		var base datadogV1.MonitorFormulaAndFunctionAggregateBaseQuery
+		if bms := a.BaseMetricsQuery; len(bms) > 0 {
+			b := bms[0]
+			mq := datadogV1.NewMonitorFormulaAndFunctionMetricsQueryDefinition(
+				datadogV1.MonitorFormulaAndFunctionMetricsDataSource(b.DataSource.ValueString()),
+				b.Query.ValueString(),
+			)
+			fwutils.SetOptString(b.Name, mq.SetName)
+			if !b.Aggregator.IsNull() {
+				mq.SetAggregator(datadogV1.MonitorFormulaAndFunctionMetricsAggregator(b.Aggregator.ValueString()))
+			}
+			base = datadogV1.MonitorFormulaAndFunctionMetricsQueryDefinitionAsMonitorFormulaAndFunctionAggregateBaseQuery(mq)
+		} else if beq := r.buildEventQueryStruct(ctx, a.BaseEventQuery); len(beq) > 0 {
+			base = datadogV1.MonitorFormulaAndFunctionEventQueryDefinitionAsMonitorFormulaAndFunctionAggregateBaseQuery(beq[0].MonitorFormulaAndFunctionEventQueryDefinition)
+		} else {
+			continue
+		}
+
+		if len(a.JoinCondition) == 0 {
+			continue
+		}
+		j := a.JoinCondition[0]
+		join := datadogV1.NewMonitorFormulaAndFunctionAggregateQueryJoinCondition(
+			j.AugmentAttribute.ValueString(),
+			j.BaseAttribute.ValueString(),
+			datadogV1.MonitorFormulaAndFunctionAggregateQueryJoinType(j.JoinType.ValueString()),
+		)
+
+		computes := []datadogV1.MonitorFormulaAndFunctionEventQueryDefinitionCompute{}
+		for _, c := range a.Compute {
+			cr := datadogV1.NewMonitorFormulaAndFunctionEventQueryDefinitionCompute(
+				datadogV1.MonitorFormulaAndFunctionEventAggregation(c.Aggregation.ValueString()),
+			)
+			fwutils.SetOptInt64(c.Interval, cr.SetInterval)
+			fwutils.SetOptString(c.Metric, cr.SetMetric)
+			fwutils.SetOptString(c.Name, cr.SetName)
+			computes = append(computes, *cr)
+		}
+		if len(computes) == 0 {
+			continue
+		}
+
+		groupBy := []datadogV1.MonitorFormulaAndFunctionEventQueryGroupBy{}
+		for _, g := range a.GroupBy {
+			gb := datadogV1.NewMonitorFormulaAndFunctionEventQueryGroupBy(g.Facet.ValueString())
+			fwutils.SetOptString(g.Source, gb.SetSource)
+			fwutils.SetOptInt64(g.Limit, gb.SetLimit)
+			if sortList := g.Sort; len(sortList) > 0 {
+				sortReq := datadogV1.MonitorFormulaAndFunctionEventQueryGroupBySort{}
+				sort := sortList[0]
+				fwutils.SetOptString(sort.Metric, sortReq.SetMetric)
+				if !sort.Aggregation.IsNull() {
+					sortReq.SetAggregation(datadogV1.MonitorFormulaAndFunctionEventAggregation(sort.Aggregation.ValueString()))
+				}
+				if !sort.Order.IsNull() {
+					sortReq.SetOrder(datadogV1.QuerySortOrder(sort.Order.ValueString()))
+				}
+				gb.SetSort(sortReq)
+			}
+			groupBy = append(groupBy, *gb)
+		}
+
+		def := datadogV1.NewMonitorFormulaAndFunctionAggregateAugmentedQueryDefinition(
+			augment,
+			base,
+			computes,
+			datadogV1.MonitorFormulaAndFunctionAggregateAugmentedDataSource(a.DataSource.ValueString()),
+			groupBy,
+			*join,
+		)
+		fwutils.SetOptString(a.Name, def.SetName)
+		wrapped := datadogV1.MonitorFormulaAndFunctionAggregateAugmentedQueryDefinitionAsMonitorFormulaAndFunctionQueryDefinition(def)
+		out = append(out, wrapped)
+	}
+	return out
+}
+
+func (r *monitorResource) buildAggregateFilteredQueryStruct(ctx context.Context, aggs []AggregateFilteredQuery) []datadogV1.MonitorFormulaAndFunctionQueryDefinition {
+	if len(aggs) == 0 {
+		return nil
+	}
+	out := []datadogV1.MonitorFormulaAndFunctionQueryDefinition{}
+	for _, a := range aggs {
+		var filterQuery datadogV1.MonitorFormulaAndFunctionAggregateFilterQuery
+		if frts := a.FilterReferenceTable; len(frts) > 0 {
+			art := frts[0]
+			ref := datadogV1.NewMonitorFormulaAndFunctionReferenceTableQueryDefinition(
+				datadogV1.MonitorFormulaAndFunctionReferenceTableDataSource(art.DataSource.ValueString()),
+				art.TableName.ValueString(),
+			)
+			fwutils.SetOptString(art.Name, ref.SetName)
+			fwutils.SetOptString(art.QueryFilter, ref.SetQueryFilter)
+			if cols := art.Columns; len(cols) > 0 {
+				colOut := make([]datadogV1.MonitorFormulaAndFunctionReferenceTableColumn, 0, len(cols))
+				for _, c := range cols {
+					col := datadogV1.NewMonitorFormulaAndFunctionReferenceTableColumn(c.Name.ValueString())
+					fwutils.SetOptString(c.Alias, col.SetAlias)
+					colOut = append(colOut, *col)
+				}
+				ref.SetColumns(colOut)
+			}
+			filterQuery = datadogV1.MonitorFormulaAndFunctionReferenceTableQueryDefinitionAsMonitorFormulaAndFunctionAggregateFilterQuery(ref)
+		} else if feq := r.buildEventQueryStruct(ctx, a.FilterEventQuery); len(feq) > 0 {
+			filterQuery = datadogV1.MonitorFormulaAndFunctionEventQueryDefinitionAsMonitorFormulaAndFunctionAggregateFilterQuery(feq[0].MonitorFormulaAndFunctionEventQueryDefinition)
+		} else {
+			continue
+		}
+
+		var base datadogV1.MonitorFormulaAndFunctionAggregateBaseQuery
+		if bms := a.BaseMetricsQuery; len(bms) > 0 {
+			b := bms[0]
+			mq := datadogV1.NewMonitorFormulaAndFunctionMetricsQueryDefinition(
+				datadogV1.MonitorFormulaAndFunctionMetricsDataSource(b.DataSource.ValueString()),
+				b.Query.ValueString(),
+			)
+			fwutils.SetOptString(b.Name, mq.SetName)
+			if !b.Aggregator.IsNull() {
+				mq.SetAggregator(datadogV1.MonitorFormulaAndFunctionMetricsAggregator(b.Aggregator.ValueString()))
+			}
+			base = datadogV1.MonitorFormulaAndFunctionMetricsQueryDefinitionAsMonitorFormulaAndFunctionAggregateBaseQuery(mq)
+		} else if beq := r.buildEventQueryStruct(ctx, a.BaseEventQuery); len(beq) > 0 {
+			base = datadogV1.MonitorFormulaAndFunctionEventQueryDefinitionAsMonitorFormulaAndFunctionAggregateBaseQuery(beq[0].MonitorFormulaAndFunctionEventQueryDefinition)
+		} else {
+			continue
+		}
+
+		if len(a.Filters) == 0 {
+			continue
+		}
+		filters := make([]datadogV1.MonitorFormulaAndFunctionAggregateQueryFilter, 0, len(a.Filters))
+		for _, f := range a.Filters {
+			fl := datadogV1.NewMonitorFormulaAndFunctionAggregateQueryFilter(
+				f.BaseAttribute.ValueString(),
+				f.FilterAttribute.ValueString(),
+			)
+			if !f.Exclude.IsNull() && f.Exclude.ValueBool() {
+				fl.SetExclude(true)
+			}
+			filters = append(filters, *fl)
+		}
+
+		def := datadogV1.NewMonitorFormulaAndFunctionAggregateFilteredQueryDefinition(
+			base,
+			datadogV1.MonitorFormulaAndFunctionAggregateFilteredDataSource(a.DataSource.ValueString()),
+			filterQuery,
+			filters,
+		)
+		fwutils.SetOptString(a.Name, def.SetName)
+
+		if len(a.Compute) > 0 {
+			computes := []datadogV1.MonitorFormulaAndFunctionEventQueryDefinitionCompute{}
+			for _, c := range a.Compute {
+				cr := datadogV1.NewMonitorFormulaAndFunctionEventQueryDefinitionCompute(
+					datadogV1.MonitorFormulaAndFunctionEventAggregation(c.Aggregation.ValueString()),
+				)
+				fwutils.SetOptInt64(c.Interval, cr.SetInterval)
+				fwutils.SetOptString(c.Metric, cr.SetMetric)
+				fwutils.SetOptString(c.Name, cr.SetName)
+				computes = append(computes, *cr)
+			}
+			def.SetCompute(computes)
+		}
+
+		if len(a.GroupBy) > 0 {
+			groupBy := []datadogV1.MonitorFormulaAndFunctionEventQueryGroupBy{}
+			for _, g := range a.GroupBy {
+				gb := datadogV1.NewMonitorFormulaAndFunctionEventQueryGroupBy(g.Facet.ValueString())
+				if !g.Source.IsNull() && g.Source.ValueString() != "" {
+					if gb.AdditionalProperties == nil {
+						gb.AdditionalProperties = map[string]interface{}{}
+					}
+					gb.AdditionalProperties["source"] = g.Source.ValueString()
+				}
+				fwutils.SetOptInt64(g.Limit, gb.SetLimit)
+				if sortList := g.Sort; len(sortList) > 0 {
+					sortReq := datadogV1.MonitorFormulaAndFunctionEventQueryGroupBySort{}
+					sort := sortList[0]
+					fwutils.SetOptString(sort.Metric, sortReq.SetMetric)
+					if !sort.Aggregation.IsNull() {
+						sortReq.SetAggregation(datadogV1.MonitorFormulaAndFunctionEventAggregation(sort.Aggregation.ValueString()))
+					}
+					if !sort.Order.IsNull() {
+						sortReq.SetOrder(datadogV1.QuerySortOrder(sort.Order.ValueString()))
+					}
+					gb.SetSort(sortReq)
+				}
+				groupBy = append(groupBy, *gb)
+			}
+			def.SetGroupBy(groupBy)
+		}
+
+		wrapped := datadogV1.MonitorFormulaAndFunctionAggregateFilteredQueryDefinitionAsMonitorFormulaAndFunctionQueryDefinition(def)
+		out = append(out, wrapped)
+	}
+	return out
+}
+
+func (r *monitorResource) buildDataJobsQueryStruct(dataJobsQs []DataJobsQuery) []datadogV1.MonitorFormulaAndFunctionQueryDefinition {
+	if len(dataJobsQs) == 0 {
+		return nil
+	}
+	variablesReq := []datadogV1.MonitorFormulaAndFunctionQueryDefinition{}
+	for _, dataJobsQ := range dataJobsQs {
+		variableReq := datadogV1.MonitorFormulaAndFunctionQueryDefinition{}
+		dataJobsQueryReq := datadogV1.MonitorFormulaAndFunctionDataJobsQueryDefinition{}
+		fwutils.SetOptString(dataJobsQ.Name, dataJobsQueryReq.SetName)
+		fwutils.SetOptString(dataJobsQ.JobsQuery, dataJobsQueryReq.SetJobsQuery)
+		fwutils.SetOptString(dataJobsQ.JobType, dataJobsQueryReq.SetJobType)
+		fwutils.SetOptString(dataJobsQ.QueryDialect, dataJobsQueryReq.SetQueryDialect)
+		variableReq.MonitorFormulaAndFunctionDataJobsQueryDefinition = &dataJobsQueryReq
+		variablesReq = append(variablesReq, variableReq)
+	}
+	return variablesReq
+}
+
+func (r *monitorResource) buildAssetsStruct(ctx context.Context, tfAssets []MonitorAsset) []datadogV1.MonitorAsset {
+	if len(tfAssets) == 0 {
+		return nil
+	}
+	assets := make([]datadogV1.MonitorAsset, 0, len(tfAssets))
+	for _, a := range tfAssets {
+		category := datadogV1.MonitorAssetCategory(a.Category.ValueString())
+		asset := datadogV1.NewMonitorAsset(category, a.Name.ValueString(), a.Url.ValueString())
+		if !a.ResourceKey.IsNull() {
+			asset.SetResourceKey(a.ResourceKey.ValueString())
+		}
+		if !a.ResourceType.IsNull() {
+			asset.SetResourceType(datadogV1.MonitorAssetResourceType(a.ResourceType.ValueString()))
+		}
+		assets = append(assets, *asset)
+	}
+	return assets
+}
+
+func (r *monitorResource) updateState(ctx context.Context, state *monitorResourceModel, m *datadogV1.Monitor) {
+	if id, ok := m.GetIdOk(); ok && id != nil {
+		state.ID = types.StringValue(strconv.FormatInt(*id, 10))
+	}
+	state.Name = fwutils.ToTerraformStr(m.GetNameOk())
+
+	if message, ok := m.GetMessageOk(); ok && message != nil {
+		state.Message = customtypes.TrimSpaceStringValue{
+			StringValue: types.StringValue(*message),
+		}
+	}
+
+	if mType, ok := m.GetTypeOk(); ok && mType != nil {
+		state.Type = customtypes.MonitorTypeValue{
+			StringValue: types.StringValue(string(*mType)),
+		}
+	}
+
+	if query, ok := m.GetQueryOk(); ok && query != nil {
+		state.Query = customtypes.TrimSpaceStringValue{
+			StringValue: types.StringValue(*query),
+		}
+	}
+
+	if draftStatus, ok := m.GetDraftStatusOk(); ok && draftStatus != nil {
+		state.DraftStatus = types.StringValue(string(*draftStatus))
+	}
+
+	if priority, ok := m.GetPriorityOk(); ok && priority != nil {
+		state.Priority = types.StringValue(strconv.FormatInt(*priority, 10))
+	}
+	state.EffectiveTags = fwutils.ToTerraformSetString(ctx, m.GetTagsOk)
+	if restrictedRoles, ok := m.GetRestrictedRolesOk(); ok && restrictedRoles == nil {
+		state.RestrictedRoles = types.SetValueMust(types.StringType, []attr.Value{})
+	} else {
+		state.RestrictedRoles = fwutils.ToTerraformSetString(ctx, m.GetRestrictedRolesOk)
+	}
+
+	if escalationMessage, ok := m.Options.GetEscalationMessageOk(); ok && escalationMessage != nil {
+		state.EscalationMessage = customtypes.TrimSpaceStringValue{
+			StringValue: types.StringValue(*escalationMessage),
+		}
+	}
+	if onMissingData, ok := m.Options.GetOnMissingDataOk(); ok && onMissingData != nil {
+		state.OnMissingData = types.StringValue(string(*onMissingData))
+	}
+	if renotifyStatuses, ok := m.Options.GetRenotifyStatusesOk(); ok && renotifyStatuses != nil {
+		state.RenotifyStatuses, _ = types.SetValueFrom(ctx, types.StringType, renotifyStatuses)
+	}
+	if notificationPresetName, ok := m.Options.GetNotificationPresetNameOk(); ok && notificationPresetName != nil {
+		state.NotificationPresetName = types.StringValue(string(*notificationPresetName))
+	}
+
+	state.RequireFullWindow = fwutils.ToTerraformBool(m.Options.GetRequireFullWindowOk())
+	state.NoDataTimeframe = fwutils.ToTerraformInt64(m.Options.GetNoDataTimeframeOk())
+	state.NotifyNoData = fwutils.ToTerraformBool(m.Options.GetNotifyNoDataOk())
+	state.GroupRetentionDuration = fwutils.ToTerraformStr(m.Options.GetGroupRetentionDurationOk())
+	state.NewGroupDelay = fwutils.ToTerraformInt64(m.Options.GetNewGroupDelayOk())
+	state.NewHostDelay = fwutils.ToTerraformInt64(m.Options.GetNewHostDelayOk())
+	state.EvaluationDelay = fwutils.ToTerraformInt64(m.Options.GetEvaluationDelayOk())
+	state.RenotifyInterval = fwutils.ToTerraformInt64(m.Options.GetRenotifyIntervalOk())
+	state.RenotifyOccurrences = fwutils.ToTerraformInt64(m.Options.GetRenotifyOccurrencesOk())
+	state.NotifyAudit = fwutils.ToTerraformBool(m.Options.GetNotifyAuditOk())
+	state.TimeoutH = fwutils.ToTerraformInt64(m.Options.GetTimeoutHOk())
+	state.IncludeTags = fwutils.ToTerraformBool(m.Options.GetIncludeTagsOk())
+	state.GroupbySimpleMonitor = fwutils.ToTerraformBool(m.Options.GetGroupbySimpleMonitorOk())
+	state.NotifyBy = fwutils.ToTerraformSetString(ctx, m.Options.GetNotifyByOk)
+	state.EnableLogsSample = fwutils.ToTerraformBool(m.Options.GetEnableLogsSampleOk())
+
+	r.updateAssetsState(ctx, state, m)
+
+	if monitorThresholds, ok := m.Options.GetThresholdsOk(); ok && monitorThresholds != nil {
+		state.MonitorThresholds = []MonitorThreshold{{
+			Ok:                    r.buildFloatStringValue(fwutils.ToTerraformStr(monitorThresholds.GetOkOk())),
+			Unknown:               r.buildFloatStringValue(fwutils.ToTerraformStr(monitorThresholds.GetUnknownOk())),
+			Warning:               r.buildFloatStringValue(fwutils.ToTerraformStr(monitorThresholds.GetWarningOk())),
+			WarningRecovery:       r.buildFloatStringValue(fwutils.ToTerraformStr(monitorThresholds.GetWarningRecoveryOk())),
+			Critical:              r.buildFloatStringValue(fwutils.ToTerraformStr(monitorThresholds.GetCriticalOk())),
+			CriticalRecovery:      r.buildFloatStringValue(fwutils.ToTerraformStr(monitorThresholds.GetCriticalRecoveryOk())),
+			CriticalQuery:         fwutils.ToTerraformStr(monitorThresholds.GetCriticalQueryOk()),
+			CriticalRecoveryQuery: fwutils.ToTerraformStr(monitorThresholds.GetCriticalRecoveryQueryOk()),
+		}}
+	}
+	if thresholdWindow, ok := m.Options.GetThresholdWindowsOk(); ok && thresholdWindow != nil {
+		state.MonitorThresholdWindows = []MonitorThresholdWindow{{
+			RecoveryWindow: fwutils.ToTerraformStr(thresholdWindow.GetRecoveryWindowOk()),
+			TriggerWindow:  fwutils.ToTerraformStr(thresholdWindow.GetTriggerWindowOk()),
+		}}
+	}
+	r.updateSchedulingOptionState(state, m.Options)
+	r.updateVariablesState(ctx, state, m.Options)
+}
+
+func (r *monitorResource) updateAssetsState(ctx context.Context, state *monitorResourceModel, m *datadogV1.Monitor) {
+	// Assets -> state
+	if assets, ok := m.GetAssetsOk(); ok && assets != nil {
+		tfAssets := make([]MonitorAsset, 0, len(*assets))
+		for _, a := range *assets {
+			tfAsset := MonitorAsset{
+				Name:     fwutils.ToTerraformStr(a.GetNameOk()),
+				Url:      fwutils.ToTerraformStr(a.GetUrlOk()),
+				Category: types.StringValue(string(a.GetCategory())),
+			}
+			if rk, ok := a.GetResourceKeyOk(); ok && rk != nil {
+				tfAsset.ResourceKey = types.StringValue(*rk)
+			} else {
+				tfAsset.ResourceKey = types.StringNull()
+			}
+			if rt, ok := a.GetResourceTypeOk(); ok && rt != nil {
+				tfAsset.ResourceType = types.StringValue(string(*rt))
+			} else {
+				tfAsset.ResourceType = types.StringNull()
+			}
+			tfAssets = append(tfAssets, tfAsset)
+		}
+		state.MonitorAssets = tfAssets
+	}
+}
+
+func (r *monitorResource) updateSchedulingOptionState(state *monitorResourceModel, mOptions *datadogV1.MonitorOptions) {
+	schedulingOptions, ok := mOptions.GetSchedulingOptionsOk()
+	if !ok || schedulingOptions == nil {
+		return
+	}
+	schedulingOptionState := SchedulingOption{}
+	if evalWindow, ok := schedulingOptions.GetEvaluationWindowOk(); ok && evalWindow != nil &&
+		(evalWindow.DayStarts != nil || evalWindow.MonthStarts != nil || evalWindow.HourStarts != nil) {
+		schedulingOptionState.EvaluationWindow = []EvaluationWindow{{
+			DayStarts:   fwutils.ToTerraformStr(evalWindow.GetDayStartsOk()),
+			MonthStarts: fwutils.ToTerraformInt32(evalWindow.GetMonthStartsOk()),
+			HourStarts:  fwutils.ToTerraformInt32(evalWindow.GetHourStartsOk()),
+			Timezone:    fwutils.ToTerraformStr(evalWindow.GetTimezoneOk()),
+		}}
+	}
+	if customSchedule, ok := schedulingOptions.GetCustomScheduleOk(); ok && customSchedule != nil && customSchedule.GetRecurrences() != nil &&
+		(customSchedule.GetRecurrences()[0].Rrule != nil || customSchedule.GetRecurrences()[0].Start != nil || customSchedule.GetRecurrences()[0].Timezone != nil) {
+		recurrence := customSchedule.GetRecurrences()[0]
+		schedulingOptionState.CustomSchedule = []CustomSchedule{{
+			Recurrence: []Recurrence{{
+				Rrule:    fwutils.ToTerraformStr(recurrence.GetRruleOk()),
+				Start:    fwutils.ToTerraformStr(recurrence.GetStartOk()),
+				Timezone: fwutils.ToTerraformStr(recurrence.GetTimezoneOk()),
+			}},
+		}}
+	}
+	state.SchedulingOptions = []SchedulingOption{schedulingOptionState}
+}
+
+func (r *monitorResource) updateVariablesState(ctx context.Context, state *monitorResourceModel, mOptions *datadogV1.MonitorOptions) {
+	variables, ok := mOptions.GetVariablesOk()
+	if !ok || variables == nil || len(*variables) == 0 {
+		return
+	}
+	eventQueryStates := []EventQuery{}
+	CloudCostQueryStates := []CloudCostQuery{}
+	DataQualityQueryStates := []DataQualityQuery{}
+	aggregateAugmentedStates := []AggregateAugmentedQuery{}
+	aggregateFilteredStates := []AggregateFilteredQuery{}
+	DataJobsQueryStates := []DataJobsQuery{}
+
+	for _, v := range *variables {
+		if eventQState := r.buildEventQueryState(ctx, v.MonitorFormulaAndFunctionEventQueryDefinition); eventQState != nil {
+			eventQueryStates = append(eventQueryStates, *eventQState)
+		}
+		if costQState := r.buildCloudCostQueryState(v.MonitorFormulaAndFunctionCostQueryDefinition); costQState != nil {
+			CloudCostQueryStates = append(CloudCostQueryStates, *costQState)
+		}
+		if dataQualityQState := r.buildDataQualityQueryState(ctx, v.MonitorFormulaAndFunctionDataQualityQueryDefinition); dataQualityQState != nil {
+			DataQualityQueryStates = append(DataQualityQueryStates, *dataQualityQState)
+		}
+		if aggState := r.buildAggregateAugmentedQueryState(ctx, v.MonitorFormulaAndFunctionAggregateAugmentedQueryDefinition); aggState != nil {
+			aggregateAugmentedStates = append(aggregateAugmentedStates, *aggState)
+		}
+		if aggFilState := r.buildAggregateFilteredQueryState(ctx, v.MonitorFormulaAndFunctionAggregateFilteredQueryDefinition); aggFilState != nil {
+			aggregateFilteredStates = append(aggregateFilteredStates, *aggFilState)
+		}
+		if dataJobsQState := r.buildDataJobsQueryState(v.MonitorFormulaAndFunctionDataJobsQueryDefinition); dataJobsQState != nil {
+			DataJobsQueryStates = append(DataJobsQueryStates, *dataJobsQState)
+		}
+	}
+	state.Variables = []Variable{{
+		EventQuery:              eventQueryStates,
+		CloudCostQuery:          CloudCostQueryStates,
+		DataQualityQuery:        DataQualityQueryStates,
+		AggregateAugmentedQuery: aggregateAugmentedStates,
+		AggregateFilteredQuery:  aggregateFilteredStates,
+		DataJobsQuery:           DataJobsQueryStates,
+	}}
+}
+
+func (r *monitorResource) buildEventQueryState(ctx context.Context, eventQ *datadogV1.MonitorFormulaAndFunctionEventQueryDefinition) *EventQuery {
+	if eventQ == nil {
+		return nil
+	}
+	eventQueryState := EventQuery{
+		Name: fwutils.ToTerraformStr(eventQ.GetNameOk()),
+	}
+	if dataSource, ok := eventQ.GetDataSourceOk(); ok && dataSource != nil {
+		eventQueryState.DataSource = types.StringValue(string(*dataSource))
+	}
+	if indexes, ok := eventQ.GetIndexesOk(); ok && indexes != nil {
+		eventQueryState.Indexes, _ = types.ListValueFrom(ctx, types.StringType, indexes)
+	}
+	if search, ok := eventQ.GetSearchOk(); ok && search != nil {
+		eventQueryState.Search = []Search{{
+			Query: types.StringValue(search.Query),
+		}}
+	}
+	if compute, ok := eventQ.GetComputeOk(); ok && compute != nil {
+		eventQueryState.Compute = []Compute{{
+			Aggregation: types.StringValue(string(compute.Aggregation)),
+			Interval:    fwutils.ToTerraformInt64(compute.GetIntervalOk()),
+			Metric:      fwutils.ToTerraformStr(compute.GetMetricOk()),
+			Name:        fwutils.ToTerraformStr(compute.GetNameOk()),
+		}}
+	}
+	if groupBys, ok := eventQ.GetGroupByOk(); ok && groupBys != nil {
+		groupBysState := []GroupBy{}
+		for _, groupBy := range *groupBys {
+			groupByState := GroupBy{
+				Facet:  fwutils.ToTerraformStr(groupBy.GetFacetOk()),
+				Source: fwutils.ToTerraformStr(groupBy.GetSourceOk()),
+				Limit:  fwutils.ToTerraformInt64(groupBy.GetLimitOk()),
+			}
+			if sort, ok := groupBy.GetSortOk(); ok && sort != nil {
+				sortState := Sort{
+					Aggregation: types.StringValue(string(sort.Aggregation)),
+					Metric:      fwutils.ToTerraformStr(sort.GetMetricOk()),
+				}
+				if order, ok := sort.GetOrderOk(); ok && order != nil {
+					sortState.Order = types.StringValue(string(*sort.Order))
+				}
+				groupByState.Sort = []Sort{sortState}
+			}
+			groupBysState = append(groupBysState, groupByState)
+		}
+		eventQueryState.GroupBy = groupBysState
+	}
+	return &eventQueryState
+}
+
+func (r *monitorResource) buildAggregateAugmentedQueryState(ctx context.Context, def *datadogV1.MonitorFormulaAndFunctionAggregateAugmentedQueryDefinition) *AggregateAugmentedQuery {
+	if def == nil {
+		return nil
+	}
+	out := AggregateAugmentedQuery{
+		Name:       fwutils.ToTerraformStr(def.GetNameOk()),
+		DataSource: types.StringValue(string(def.GetDataSource())),
+	}
+
+	aq := def.GetAugmentQuery()
+	if aq.MonitorFormulaAndFunctionReferenceTableQueryDefinition != nil {
+		ref := aq.MonitorFormulaAndFunctionReferenceTableQueryDefinition
+		art := ReferenceTableMonitorVariable{
+			DataSource:  types.StringValue(string(ref.GetDataSource())),
+			TableName:   types.StringValue(ref.GetTableName()),
+			Name:        fwutils.ToTerraformStr(ref.GetNameOk()),
+			QueryFilter: fwutils.ToTerraformStr(ref.GetQueryFilterOk()),
+		}
+		if cols, ok := ref.GetColumnsOk(); ok && cols != nil {
+			for _, c := range *cols {
+				art.Columns = append(art.Columns, RefTableColumn{
+					Name:  types.StringValue(c.GetName()),
+					Alias: fwutils.ToTerraformStr(c.GetAliasOk()),
+				})
+			}
+		}
+		out.AugmentReferenceTable = []ReferenceTableMonitorVariable{art}
+	} else if aq.MonitorFormulaAndFunctionEventQueryDefinition != nil {
+		if ev := r.buildEventQueryState(ctx, aq.MonitorFormulaAndFunctionEventQueryDefinition); ev != nil {
+			out.AugmentEventQuery = []EventQuery{*ev}
+		}
+	}
+
+	bq := def.GetBaseQuery()
+	if bq.MonitorFormulaAndFunctionMetricsQueryDefinition != nil {
+		mq := bq.MonitorFormulaAndFunctionMetricsQueryDefinition
+		out.BaseMetricsQuery = []BaseMetricsQuery{{
+			DataSource: types.StringValue(string(mq.GetDataSource())),
+			Query:      types.StringValue(mq.GetQuery()),
+			Name:       fwutils.ToTerraformStr(mq.GetNameOk()),
+			Aggregator: fwutils.ToTerraformStr(mq.GetAggregatorOk()),
+		}}
+	} else if bq.MonitorFormulaAndFunctionEventQueryDefinition != nil {
+		if ev := r.buildEventQueryState(ctx, bq.MonitorFormulaAndFunctionEventQueryDefinition); ev != nil {
+			out.BaseEventQuery = []EventQuery{*ev}
+		}
+	}
+
+	jc := def.GetJoinCondition()
+	out.JoinCondition = []AggregateJoinCondition{{
+		AugmentAttribute: types.StringValue(jc.GetAugmentAttribute()),
+		BaseAttribute:    types.StringValue(jc.GetBaseAttribute()),
+		JoinType:         types.StringValue(string(jc.GetJoinType())),
+	}}
+
+	if computes, ok := def.GetComputeOk(); ok && computes != nil {
+		for _, c := range *computes {
+			out.Compute = append(out.Compute, Compute{
+				Aggregation: types.StringValue(string(c.GetAggregation())),
+				Interval:    fwutils.ToTerraformInt64(c.GetIntervalOk()),
+				Metric:      fwutils.ToTerraformStr(c.GetMetricOk()),
+				Name:        fwutils.ToTerraformStr(c.GetNameOk()),
+			})
+		}
+	}
+
+	if groups, ok := def.GetGroupByOk(); ok && groups != nil {
+		for _, g := range *groups {
+			gb := GroupBy{
+				Facet:  fwutils.ToTerraformStr(g.GetFacetOk()),
+				Source: fwutils.ToTerraformStr(g.GetSourceOk()),
+				Limit:  fwutils.ToTerraformInt64(g.GetLimitOk()),
+			}
+			if sort, ok := g.GetSortOk(); ok && sort != nil {
+				s := Sort{
+					Aggregation: types.StringValue(string(sort.Aggregation)),
+					Metric:      fwutils.ToTerraformStr(sort.GetMetricOk()),
+				}
+				if order, ok := sort.GetOrderOk(); ok && order != nil {
+					s.Order = types.StringValue(string(*order))
+				}
+				gb.Sort = []Sort{s}
+			}
+			out.GroupBy = append(out.GroupBy, gb)
+		}
+	}
+
+	return &out
+}
+
+func (r *monitorResource) buildAggregateFilteredQueryState(ctx context.Context, def *datadogV1.MonitorFormulaAndFunctionAggregateFilteredQueryDefinition) *AggregateFilteredQuery {
+	if def == nil {
+		return nil
+	}
+	out := AggregateFilteredQuery{
+		Name:       fwutils.ToTerraformStr(def.GetNameOk()),
+		DataSource: types.StringValue(string(def.GetDataSource())),
+	}
+
+	fq := def.GetFilterQuery()
+	if fq.MonitorFormulaAndFunctionReferenceTableQueryDefinition != nil {
+		ref := fq.MonitorFormulaAndFunctionReferenceTableQueryDefinition
+		art := ReferenceTableMonitorVariable{
+			DataSource:  types.StringValue(string(ref.GetDataSource())),
+			TableName:   types.StringValue(ref.GetTableName()),
+			Name:        fwutils.ToTerraformStr(ref.GetNameOk()),
+			QueryFilter: fwutils.ToTerraformStr(ref.GetQueryFilterOk()),
+		}
+		if cols, ok := ref.GetColumnsOk(); ok && cols != nil {
+			for _, c := range *cols {
+				art.Columns = append(art.Columns, RefTableColumn{
+					Name:  types.StringValue(c.GetName()),
+					Alias: fwutils.ToTerraformStr(c.GetAliasOk()),
+				})
+			}
+		}
+		out.FilterReferenceTable = []ReferenceTableMonitorVariable{art}
+	} else if fq.MonitorFormulaAndFunctionEventQueryDefinition != nil {
+		if ev := r.buildEventQueryState(ctx, fq.MonitorFormulaAndFunctionEventQueryDefinition); ev != nil {
+			out.FilterEventQuery = []EventQuery{*ev}
+		}
+	}
+
+	bq := def.GetBaseQuery()
+	if bq.MonitorFormulaAndFunctionMetricsQueryDefinition != nil {
+		mq := bq.MonitorFormulaAndFunctionMetricsQueryDefinition
+		out.BaseMetricsQuery = []BaseMetricsQuery{{
+			DataSource: types.StringValue(string(mq.GetDataSource())),
+			Query:      types.StringValue(mq.GetQuery()),
+			Name:       fwutils.ToTerraformStr(mq.GetNameOk()),
+			Aggregator: fwutils.ToTerraformStr(mq.GetAggregatorOk()),
+		}}
+	} else if bq.MonitorFormulaAndFunctionEventQueryDefinition != nil {
+		if ev := r.buildEventQueryState(ctx, bq.MonitorFormulaAndFunctionEventQueryDefinition); ev != nil {
+			out.BaseEventQuery = []EventQuery{*ev}
+		}
+	}
+
+	for _, f := range def.GetFilters() {
+		filter := AggregateQueryFilter{
+			BaseAttribute:   types.StringValue(f.GetBaseAttribute()),
+			FilterAttribute: types.StringValue(f.GetFilterAttribute()),
+			Exclude:         types.BoolNull(),
+		}
+		// API may return exclude=false even when omitted on create; only persist true in state.
+		if exclude, ok := f.GetExcludeOk(); ok && exclude != nil && *exclude {
+			filter.Exclude = types.BoolValue(true)
+		}
+		out.Filters = append(out.Filters, filter)
+	}
+
+	if computes, ok := def.GetComputeOk(); ok && computes != nil {
+		for _, c := range *computes {
+			out.Compute = append(out.Compute, Compute{
+				Aggregation: types.StringValue(string(c.GetAggregation())),
+				Interval:    fwutils.ToTerraformInt64(c.GetIntervalOk()),
+				Metric:      fwutils.ToTerraformStr(c.GetMetricOk()),
+				Name:        fwutils.ToTerraformStr(c.GetNameOk()),
+			})
+		}
+	}
+
+	if groups, ok := def.GetGroupByOk(); ok && groups != nil {
+		for _, g := range *groups {
+			gb := GroupBy{
+				Facet:  fwutils.ToTerraformStr(g.GetFacetOk()),
+				Source: types.StringNull(),
+				Limit:  fwutils.ToTerraformInt64(g.GetLimitOk()),
+			}
+			if g.AdditionalProperties != nil {
+				if s, ok := g.AdditionalProperties["source"].(string); ok && s != "" {
+					gb.Source = types.StringValue(s)
+				}
+			}
+			if sort, ok := g.GetSortOk(); ok && sort != nil {
+				s := Sort{
+					Aggregation: types.StringValue(string(sort.Aggregation)),
+					Metric:      fwutils.ToTerraformStr(sort.GetMetricOk()),
+				}
+				if order, ok := sort.GetOrderOk(); ok && order != nil {
+					s.Order = types.StringValue(string(*order))
+				}
+				gb.Sort = []Sort{s}
+			}
+			out.GroupBy = append(out.GroupBy, gb)
+		}
+	}
+
+	return &out
+}
+
+func (r *monitorResource) buildCloudCostQueryState(cloudCostQ *datadogV1.MonitorFormulaAndFunctionCostQueryDefinition) *CloudCostQuery {
+	if cloudCostQ == nil {
+		return nil
+	}
+	cloudCostQueryState := CloudCostQuery{
+		DataSource: types.StringValue(string(cloudCostQ.DataSource)),
+		Query:      fwutils.ToTerraformStr(cloudCostQ.GetQueryOk()),
+		Name:       fwutils.ToTerraformStr(cloudCostQ.GetNameOk()),
+	}
+	if aggregator, ok := cloudCostQ.GetAggregatorOk(); ok && aggregator != nil {
+		cloudCostQueryState.Aggregator = types.StringValue(string(*cloudCostQ.Aggregator))
+	}
+	return &cloudCostQueryState
+}
+
+func (r *monitorResource) buildDataQualityQueryState(ctx context.Context, dataQualityQ *datadogV1.MonitorFormulaAndFunctionDataQualityQueryDefinition) *DataQualityQuery {
+	if dataQualityQ == nil {
+		return nil
+	}
+	dataQualityQueryState := DataQualityQuery{
+		Name:          fwutils.ToTerraformStr(dataQualityQ.GetNameOk()),
+		Filter:        fwutils.ToTerraformStr(dataQualityQ.GetFilterOk()),
+		SchemaVersion: fwutils.ToTerraformStr(dataQualityQ.GetSchemaVersionOk()),
+		Scope:         fwutils.ToTerraformStr(dataQualityQ.GetScopeOk()),
+	}
+	if dataSource, ok := dataQualityQ.GetDataSourceOk(); ok && dataSource != nil {
+		dataQualityQueryState.DataSource = types.StringValue(string(*dataSource))
+	}
+	if measure, ok := dataQualityQ.GetMeasureOk(); ok && measure != nil {
+		dataQualityQueryState.Measure = types.StringValue(string(*measure))
+	}
+	if groupBy, ok := dataQualityQ.GetGroupByOk(); ok && groupBy != nil {
+		dataQualityQueryState.GroupBy, _ = types.ListValueFrom(ctx, types.StringType, groupBy)
+	}
+	// Monitor options
+	if monitorOpts, ok := dataQualityQ.GetMonitorOptionsOk(); ok && monitorOpts != nil {
+		monitorOptsState := DataQualityMonitorOptions{
+			CustomSql:       fwutils.ToTerraformStr(monitorOpts.GetCustomSqlOk()),
+			CustomWhere:     fwutils.ToTerraformStr(monitorOpts.GetCustomWhereOk()),
+			CrontabOverride: fwutils.ToTerraformStr(monitorOpts.GetCrontabOverrideOk()),
+			Sensitivity:     fwutils.ToTerraformFloat64(monitorOpts.GetSensitivityOk()),
+		}
+		if sourceToTarget, ok := monitorOpts.GetSourceToTargetConfigOk(); ok && sourceToTarget != nil {
+			monitorOptsState.SourceToTargetConfig = []DataQualitySourceToTargetConfig{
+				*r.buildDataQualitySourceToTargetConfigState(ctx, sourceToTarget),
+			}
+		}
+		if modelConfiguration, ok := monitorOpts.GetModelConfigurationOk(); ok && modelConfiguration != nil {
+			monitorOptsState.ModelConfiguration = []DataQualityModelConfiguration{
+				*buildDataQualityModelConfigurationState(modelConfiguration),
+			}
+		}
+		if groupByCols, ok := monitorOpts.GetGroupByColumnsOk(); ok && groupByCols != nil {
+			monitorOptsState.GroupByColumns, _ = types.ListValueFrom(ctx, types.StringType, groupByCols)
+		}
+		if modelTypeOverride, ok := monitorOpts.GetModelTypeOverrideOk(); ok && modelTypeOverride != nil {
+			monitorOptsState.ModelTypeOverride = types.StringValue(string(*modelTypeOverride))
+		}
+		dataQualityQueryState.MonitorOptions = []DataQualityMonitorOptions{monitorOptsState}
+	}
+	return &dataQualityQueryState
+}
+
+func (r *monitorResource) buildDataQualityEntityMetricConfig(ctx context.Context, cfg DataQualityEntityMetricConfig) datadogV1.MonitorFormulaAndFunctionDataQualityEntityMetricConfig {
+	req := datadogV1.NewMonitorFormulaAndFunctionDataQualityEntityMetricConfig(cfg.EntityId.ValueString(), cfg.EntityType.ValueString())
+	fwutils.SetOptString(cfg.CustomSql, req.SetCustomSql)
+	fwutils.SetOptString(cfg.CustomWhere, req.SetCustomWhere)
+	fwutils.SetOptStringList(cfg.GroupByColumns, req.SetGroupByColumns, ctx)
+	return *req
+}
+
+func (r *monitorResource) buildDataQualitySourceToTargetConfig(ctx context.Context, cfg DataQualitySourceToTargetConfig) *datadogV1.MonitorFormulaAndFunctionDataQualitySourceToTargetConfig {
+	var source, target datadogV1.MonitorFormulaAndFunctionDataQualityEntityMetricConfig
+	if len(cfg.Source) > 0 {
+		source = r.buildDataQualityEntityMetricConfig(ctx, cfg.Source[0])
+	}
+	if len(cfg.Target) > 0 {
+		target = r.buildDataQualityEntityMetricConfig(ctx, cfg.Target[0])
+	}
+	return datadogV1.NewMonitorFormulaAndFunctionDataQualitySourceToTargetConfig(
+		datadogV1.MonitorFormulaAndFunctionDataQualityDiffType(cfg.DiffType.ValueString()),
+		cfg.EntityType.ValueString(),
+		source,
+		target,
+	)
+}
+
+func (r *monitorResource) buildDataQualityModelConfiguration(cfg DataQualityModelConfiguration) *datadogV1.MonitorFormulaAndFunctionDataQualityModelConfiguration {
+	req := datadogV1.NewMonitorFormulaAndFunctionDataQualityModelConfiguration()
+	fwutils.SetOptInt32(cfg.AutoResolveDays, req.SetAutoResolveDays)
+	// Unlike the SDKv2 path, which cannot tell an omitted bool from false and so
+	// defaults the attribute to true, a null here means "not configured" and an
+	// explicit false is sent as-is.
+	fwutils.SetOptBool(cfg.EnableFlatlineDetection, req.SetEnableFlatlineDetection)
+	if !cfg.Function.IsNull() {
+		req.SetFunction(datadogV1.MonitorFormulaAndFunctionDataQualityDiffFunction(cfg.Function.ValueString()))
+	}
+	fwutils.SetOptFloat64(cfg.MinLowerBoundSize, req.SetMinLowerBoundSize)
+	fwutils.SetOptFloat64(cfg.MinUpperBoundSize, req.SetMinUpperBoundSize)
+	if !cfg.ModelBoundsOverride.IsNull() {
+		req.SetModelBoundsOverride(datadogV1.MonitorFormulaAndFunctionDataQualityModelBoundsOverride(cfg.ModelBoundsOverride.ValueString()))
+	}
+	return req
+}
+
+func buildDataQualityEntityMetricConfigState(ctx context.Context, cfg *datadogV1.MonitorFormulaAndFunctionDataQualityEntityMetricConfig) []DataQualityEntityMetricConfig {
+	state := DataQualityEntityMetricConfig{
+		EntityId:    fwutils.ToTerraformStr(cfg.GetEntityIdOk()),
+		EntityType:  fwutils.ToTerraformStr(cfg.GetEntityTypeOk()),
+		CustomSql:   fwutils.ToTerraformStr(cfg.GetCustomSqlOk()),
+		CustomWhere: fwutils.ToTerraformStr(cfg.GetCustomWhereOk()),
+		// A typed null, not the zero value: a types.List with no element type is
+		// not a valid null and the framework rejects it when writing state.
+		GroupByColumns: types.ListNull(types.StringType),
+	}
+	if groupByCols, ok := cfg.GetGroupByColumnsOk(); ok && groupByCols != nil {
+		state.GroupByColumns, _ = types.ListValueFrom(ctx, types.StringType, groupByCols)
+	}
+	return []DataQualityEntityMetricConfig{state}
+}
+
+func (r *monitorResource) buildDataQualitySourceToTargetConfigState(ctx context.Context, cfg *datadogV1.MonitorFormulaAndFunctionDataQualitySourceToTargetConfig) *DataQualitySourceToTargetConfig {
+	state := DataQualitySourceToTargetConfig{
+		DiffType:   types.StringNull(),
+		EntityType: fwutils.ToTerraformStr(cfg.GetEntityTypeOk()),
+	}
+	// Enum getters return their own named pointer type, which ToTerraformStr does
+	// not match, so it would silently yield null. Convert explicitly.
+	if diffType, ok := cfg.GetDiffTypeOk(); ok && diffType != nil {
+		state.DiffType = types.StringValue(string(*diffType))
+	}
+	if source, ok := cfg.GetSourceOk(); ok && source != nil {
+		state.Source = buildDataQualityEntityMetricConfigState(ctx, source)
+	}
+	if target, ok := cfg.GetTargetOk(); ok && target != nil {
+		state.Target = buildDataQualityEntityMetricConfigState(ctx, target)
+	}
+	return &state
+}
+
+func buildDataQualityModelConfigurationState(cfg *datadogV1.MonitorFormulaAndFunctionDataQualityModelConfiguration) *DataQualityModelConfiguration {
+	state := &DataQualityModelConfiguration{
+		AutoResolveDays:         fwutils.ToTerraformInt32(cfg.GetAutoResolveDaysOk()),
+		EnableFlatlineDetection: fwutils.ToTerraformBool(cfg.GetEnableFlatlineDetectionOk()),
+		Function:                types.StringNull(),
+		MinLowerBoundSize:       fwutils.ToTerraformFloat64(cfg.GetMinLowerBoundSizeOk()),
+		MinUpperBoundSize:       fwutils.ToTerraformFloat64(cfg.GetMinUpperBoundSizeOk()),
+		ModelBoundsOverride:     types.StringNull(),
+	}
+	// See buildDataQualitySourceToTargetConfigState: enum getters need an explicit
+	// conversion rather than ToTerraformStr.
+	if function, ok := cfg.GetFunctionOk(); ok && function != nil {
+		state.Function = types.StringValue(string(*function))
+	}
+	if boundsOverride, ok := cfg.GetModelBoundsOverrideOk(); ok && boundsOverride != nil {
+		state.ModelBoundsOverride = types.StringValue(string(*boundsOverride))
+	}
+	return state
+}
+
+func (r *monitorResource) buildDataJobsQueryState(dataJobsQ *datadogV1.MonitorFormulaAndFunctionDataJobsQueryDefinition) *DataJobsQuery {
+	if dataJobsQ == nil {
+		return nil
+	}
+	return &DataJobsQuery{
+		Name:         fwutils.ToTerraformStr(dataJobsQ.GetNameOk()),
+		JobsQuery:    fwutils.ToTerraformStr(dataJobsQ.GetJobsQueryOk()),
+		JobType:      fwutils.ToTerraformStr(dataJobsQ.GetJobTypeOk()),
+		QueryDialect: fwutils.ToTerraformStr(dataJobsQ.GetQueryDialectOk()),
+	}
+}
+
+func (r *monitorResource) getMonitorId(state *monitorResourceModel) (*int64, diag.Diagnostics) {
+	diags := diag.Diagnostics{}
+	stateId := state.ID.ValueString()
+	id, err := strconv.ParseInt(stateId, 10, 64)
+	if err != nil {
+		diags.Append(utils.FrameworkErrorDiag(err, "error on monitor id"))
+		return nil, diags
+	}
+	return &id, diags
+}
+
+func (r *monitorResource) getAllowTypes() []string {
+	return enumStrings((*datadogV1.MonitorType)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getDraftStatusTypes() []string {
+	return enumStrings((*datadogV1.MonitorDraftStatus)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowRenotifyStatus() []string {
+	return enumStrings((*datadogV1.MonitorRenotifyStatusType)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowOnMissingData() []string {
+	return enumStrings((*datadogV1.OnMissingDataOption)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowMonitorOptionsNotificationPresets() []string {
+	return enumStrings((*datadogV1.MonitorOptionsNotificationPresets)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowEventQueryDataSource() []string {
+	return enumStrings((*datadogV1.MonitorFormulaAndFunctionEventsDataSource)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowEventQueryAggregation() []string {
+	return enumStrings((*datadogV1.MonitorFormulaAndFunctionEventAggregation)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowEventQueryOrder() []string {
+	return enumStrings((*datadogV1.QuerySortOrder)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowCloudCostDataSource() []string {
+	return enumStrings((*datadogV1.MonitorFormulaAndFunctionCostDataSource)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowCloudCostAggregator() []string {
+	return enumStrings((*datadogV1.MonitorFormulaAndFunctionCostAggregator)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowDataQualityDataSource() []string {
+	return enumStrings((*datadogV1.MonitorFormulaAndFunctionDataQualityDataSource)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowMonitorAssetCategory() []string {
+	return enumStrings((*datadogV1.MonitorAssetCategory)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowMonitorAssetResourceType() []string {
+	return enumStrings((*datadogV1.MonitorAssetResourceType)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowAggregateAugmentedDataSource() []string {
+	return enumStrings((*datadogV1.MonitorFormulaAndFunctionAggregateAugmentedDataSource)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowAggregateFilteredDataSource() []string {
+	return enumStrings((*datadogV1.MonitorFormulaAndFunctionAggregateFilteredDataSource)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowReferenceTableDataSource() []string {
+	return enumStrings((*datadogV1.MonitorFormulaAndFunctionReferenceTableDataSource)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowMetricsDataSource() []string {
+	return enumStrings((*datadogV1.MonitorFormulaAndFunctionMetricsDataSource)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowMetricsAggregator() []string {
+	return enumStrings((*datadogV1.MonitorFormulaAndFunctionMetricsAggregator)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) getAllowAggregateJoinType() []string {
+	return enumStrings((*datadogV1.MonitorFormulaAndFunctionAggregateQueryJoinType)(nil).GetAllowedValues())
+}
+
+func (r *monitorResource) parseInt(v types.String) *int64 {
+	if v.IsNull() || v.IsUnknown() {
+		return nil
+	}
+	result, err := strconv.ParseInt(v.ValueString(), 10, 64)
+	if err != nil {
+		return nil
+	}
+	return &result
+}
+
+func (r *monitorResource) parseFloat(v customtypes.FloatStringValue) *float64 {
+	if v.IsNull() || v.IsUnknown() {
+		return nil
+	}
+	result, err := json.Number(v.ValueString()).Float64()
+	if err != nil {
+		return nil
+	}
+	return &result
+}
+
+func (r *monitorResource) buildFloatStringValue(v types.String) customtypes.FloatStringValue {
+	return customtypes.FloatStringValue{
+		StringValue: v,
+	}
+}

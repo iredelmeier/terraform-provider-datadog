@@ -7,15 +7,16 @@ import (
 
 	"github.com/terraform-providers/terraform-provider-datadog/datadog"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	communityClient "github.com/zorkian/go-datadog-api"
 )
 
 // We're not testing for schedules because Datadog actively verifies it with Pagerduty
 
 func TestAccDatadogIntegrationPagerduty_Basic(t *testing.T) {
+	t.Parallel()
 	_, accProviders := testAccProviders(context.Background(), t)
 	accProvider := testAccProvider(t, accProviders)
 
@@ -31,7 +32,7 @@ func TestAccDatadogIntegrationPagerduty_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"datadog_integration_pagerduty.foo", "subdomain", "testdomain"),
 					resource.TestCheckResourceAttr(
-						"datadog_integration_pagerduty.foo", "api_token", "secret"),
+						"datadog_integration_pagerduty.foo", "api_token", "abcdefghijklmnopqrst"),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_pagerduty.foo", "schedules.0", "https://ddog.pagerduty.com/schedules/X123VF"),
 				),
@@ -75,6 +76,6 @@ func testAccCheckDatadogIntegrationPagerdutyConfig() string {
  resource "datadog_integration_pagerduty" "foo" {
    schedules = ["https://ddog.pagerduty.com/schedules/X123VF"]
    subdomain = "testdomain"
-   api_token = "secret"
+   api_token = "abcdefghijklmnopqrst"
  }`
 }

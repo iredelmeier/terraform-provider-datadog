@@ -1,0 +1,61 @@
+package model
+
+// TrackingFieldMetadata is the decoded form of the x-datadog-tf-generator
+// tag registry, attached to a synthetic operation for artifact generation.
+type TrackingFieldMetadata struct {
+	// Family and Block name the tag-scoped registry address this metadata
+	// was desugared from, e.g. ("integration_databricks_account",
+	// "datasource_list"). They exist so a diagnostic can quote the address the author
+	// actually wrote instead of a path the registry never mentions, and are not
+	// serialized: they say where the annotation lives, not what it declares.
+	Tag    string `json:"-"`
+	Family string `json:"-"`
+	Block  string `json:"-"`
+	// ArtifactKind selects resource (full CRUD) vs data_source (read-only).
+	// Required.
+	ArtifactKind ArtifactKind `json:"artifact_kind"`
+	// ArtifactName is the Terraform-facing name without the datadog_ prefix,
+	// lowercase snake_case, unique per artifact_kind (resources and data
+	// sources are separate Terraform namespaces). Required.
+	ArtifactName string `json:"artifact_name"`
+	// Cardinality selects singular (one item by id) vs plural (filtered list)
+	// for a data source. Optional; absent/empty decodes to singular.
+	Cardinality Cardinality `json:"cardinality,omitempty"`
+	// TfDescription is the author-supplied doc string for the generated
+	// artifact's top-level Terraform schema. Optional; empty when omitted.
+	TfDescription string `json:"tf_description,omitempty"`
+	// Group names the OpenAPI operations backing this artifact: create/read/
+	// update/delete for a resource, read (by-id) and/or search (list) for a data
+	// source. At least one of Read/Search is required when Group is present.
+	Group *OperationGroup `json:"group,omitempty"`
+	// IdStrategy is how the Terraform resource ID is derived from the API
+	// response. Defaults to "data.id" when omitted.
+	IdStrategy IdStrategy `json:"id_strategy,omitempty"`
+	// Overwrites names the hand-written data source constructor this generated
+	// artifact supersedes, e.g. "NewDatadogTeamDataSource". When set, the
+	// generated file overwrites the hand-written one in place, that constructor is
+	// removed from the FrameworkProvider Datasources slice, and the generated one
+	// is registered in generatedDatasources. Empty when purely additive.
+	Overwrites string `json:"overwrites,omitempty"`
+}
+
+// OperationGroup references, by operationId, the OpenAPI operations backing an
+// artifact: the create/read/update/delete lifecycle for a resource, or read
+// (by-id) and/or search (list) for a data source.
+type OperationGroup struct {
+	// Create is the operationId of the Create endpoint.
+	Create string `json:"create,omitempty"`
+	// Read is the operationId of the Read (by-id) endpoint. At least one of
+	// Read/Search must be present.
+	Read string `json:"read,omitempty"`
+	// Search is the operationId of the list endpoint a singular data source uses
+	// to resolve a single match. Never inferred; declared explicitly.
+	Search string `json:"search,omitempty"`
+	// Update is the operationId of the Update endpoint. May be omitted; the
+	// generator then forces replacement on every request-settable attribute
+	// (RequiresReplace()), never on a Computed-only one, since there would be no
+	// endpoint to reconcile a server-side change through anyway.
+	Update string `json:"update,omitempty"`
+	// Delete is the operationId of the Delete endpoint.
+	Delete string `json:"delete,omitempty"`
+}

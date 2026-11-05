@@ -13,8 +13,8 @@ Use this data source to retrieve information about multiple roles for use in oth
 ## Example Usage
 
 ```terraform
-data "datadog_roles" "foo" {
-  filter = "Datadog"
+data "datadog_roles" "key_management_roles" {
+  filter = "API Key Manager"
 }
 ```
 
@@ -23,20 +23,18 @@ data "datadog_roles" "foo" {
 
 ### Optional
 
-- **filter** (String) Filter all roles by the given string.
+- `filter` (String) Filter all roles by the given string.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
-- **roles** (List of Object) List of Roles (see [below for nested schema](#nestedatt--roles))
+- `id` (String) The ID of this resource.
+- `roles` (List of Object) List of Roles (see [below for nested schema](#nestedatt--roles))
 
 <a id="nestedatt--roles"></a>
 ### Nested Schema for `roles`
 
 Read-Only:
 
-- **id** (String)
-- **name** (String)
-- **user_count** (Number)
-
-
+- `id` (String)
+- `name` (String)
+- `user_count` (Number)

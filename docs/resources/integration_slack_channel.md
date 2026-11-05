@@ -31,27 +31,30 @@ resource "datadog_integration_slack_channel" "test_channel" {
 
 ### Required
 
-- **account_name** (String) Slack account name.
-- **channel_name** (String) Slack channel name.
-- **display** (Block List, Min: 1, Max: 1) Configuration options for what is shown in an alert event message. (see [below for nested schema](#nestedblock--display))
+- `account_name` (String) Slack account name.
+- `channel_name` (String) Slack channel name.
+- `display` (Block List, Min: 1, Max: 1) Configuration options for what is shown in an alert event message. (see [below for nested schema](#nestedblock--display))
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
 
 <a id="nestedblock--display"></a>
 ### Nested Schema for `display`
 
 Optional:
 
-- **message** (Boolean) Show the main body of the alert event.
-- **notified** (Boolean) Show the list of @-handles in the alert event.
-- **snapshot** (Boolean) Show the alert event's snapshot image.
-- **tags** (Boolean) Show the scopes on which the monitor alerted.
+- `message` (Boolean) Show the main body of the alert event. Defaults to `true`.
+- `mute_buttons` (Boolean) Show interactive buttons to mute the alerting monitor. Defaults to `true`.
+- `notified` (Boolean) Show the list of @-handles in the alert event. Defaults to `true`.
+- `snapshot` (Boolean) Show the alert event's snapshot image. Defaults to `true`.
+- `tags` (Boolean) Show the scopes on which the monitor alerted. Defaults to `true`.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 # Slack channel integrations can be imported using their account_name and channel_name separated with a colon (`:`).

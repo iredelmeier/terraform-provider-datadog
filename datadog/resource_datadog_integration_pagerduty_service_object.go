@@ -2,10 +2,12 @@ package datadog
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 
-	datadogV1 "github.com/DataDog/datadog-api-client-go/api/v1/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -19,22 +21,25 @@ func resourceDatadogIntegrationPagerdutySO() *schema.Resource {
 		ReadContext:   resourceDatadogIntegrationPagerdutySORead,
 		UpdateContext: resourceDatadogIntegrationPagerdutySOUpdate,
 		DeleteContext: resourceDatadogIntegrationPagerdutySODelete,
-		// since the API never returns service_key, it's impossible to meaningfully import resources
-		Importer: nil,
+		Importer: &schema.ResourceImporter{
+			StateContext: resourceDatadogIntegrationPagerdutySOImport,
+		},
 
-		Schema: map[string]*schema.Schema{
-			"service_name": {
-				Description: "Your Service name in PagerDuty.",
-				Type:        schema.TypeString,
-				Required:    true,
-				ForceNew:    true,
-			},
-			"service_key": {
-				Description: "Your Service name associated service key in PagerDuty. Note: Since the Datadog API never returns service keys, it is impossible to detect [drifts](https://www.hashicorp.com/blog/detecting-and-managing-drift-with-terraform). The best way to solve a drift is to manually mark the Service Object resource with [terraform taint](https://www.terraform.io/docs/commands/taint.html) to have it destroyed and recreated.",
-				Type:        schema.TypeString,
-				Required:    true,
-				Sensitive:   true,
-			},
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"service_name": {
+					Description: "Your Service name in PagerDuty.",
+					Type:        schema.TypeString,
+					Required:    true,
+					ForceNew:    true,
+				},
+				"service_key": {
+					Description: "Your Service name associated service key in PagerDuty. This key may also be referred to as an Integration Key or Routing Key in the Pagerduty Integration [documentation](https://www.pagerduty.com/docs/guides/datadog-integration-guide/), UI, and within the [Pagerduty Provider for Terraform](https://registry.terraform.io/providers/PagerDuty/pagerduty/latest/docs/resources/service_integration#integration_key) Note: Since the Datadog API never returns service keys, it is impossible to detect [drifts](https://www.hashicorp.com/blog/detecting-and-managing-drift-with-terraform). The best way to solve a drift is to manually mark the Service Object resource with [terraform taint](https://www.terraform.io/docs/commands/taint.html) to have it destroyed and recreated.",
+					Type:        schema.TypeString,
+					Required:    true,
+					Sensitive:   true,
+				},
+			}
 		},
 	}
 }
@@ -62,14 +67,14 @@ func buildIntegrationPagerdutyServiceKey(d *schema.ResourceData) *datadogV1.Page
 
 func resourceDatadogIntegrationPagerdutySOCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	integrationPdMutex.Lock()
 	defer integrationPdMutex.Unlock()
 
 	so := buildIntegrationPagerdutySO(d)
-	if _, httpresp, err := datadogClientV1.PagerDutyIntegrationApi.CreatePagerDutyIntegrationService(authV1, *so); err != nil {
+	if _, httpresp, err := apiInstances.GetPagerDutyIntegrationApiV1().CreatePagerDutyIntegrationService(auth, *so); err != nil {
 		// TODO: warn user that PD integration must be enabled to be able to create service objects
 		return utils.TranslateClientErrorDiag(err, httpresp, "error creating PagerDuty integration service")
 	}
@@ -80,10 +85,10 @@ func resourceDatadogIntegrationPagerdutySOCreate(ctx context.Context, d *schema.
 
 func resourceDatadogIntegrationPagerdutySORead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
-	so, httpresp, err := datadogClientV1.PagerDutyIntegrationApi.GetPagerDutyIntegrationService(authV1, d.Id())
+	so, httpresp, err := apiInstances.GetPagerDutyIntegrationApiV1().GetPagerDutyIntegrationService(auth, d.Id())
 	if err != nil {
 		if httpresp != nil && httpresp.StatusCode == 404 {
 			d.SetId("")
@@ -107,14 +112,14 @@ func resourceDatadogIntegrationPagerdutySORead(ctx context.Context, d *schema.Re
 
 func resourceDatadogIntegrationPagerdutySOUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	integrationPdMutex.Lock()
 	defer integrationPdMutex.Unlock()
 
 	serviceKey := buildIntegrationPagerdutyServiceKey(d)
-	if httpresp, err := datadogClientV1.PagerDutyIntegrationApi.UpdatePagerDutyIntegrationService(authV1, d.Id(), *serviceKey); err != nil {
+	if httpresp, err := apiInstances.GetPagerDutyIntegrationApiV1().UpdatePagerDutyIntegrationService(auth, d.Id(), *serviceKey); err != nil {
 		return utils.TranslateClientErrorDiag(err, httpresp, "error updating PagerDuty integration service")
 	}
 
@@ -123,15 +128,30 @@ func resourceDatadogIntegrationPagerdutySOUpdate(ctx context.Context, d *schema.
 
 func resourceDatadogIntegrationPagerdutySODelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	integrationPdMutex.Lock()
 	defer integrationPdMutex.Unlock()
 
-	if httpresp, err := datadogClientV1.PagerDutyIntegrationApi.DeletePagerDutyIntegrationService(authV1, d.Id()); err != nil {
+	if httpresp, err := apiInstances.GetPagerDutyIntegrationApiV1().DeletePagerDutyIntegrationService(auth, d.Id()); err != nil {
 		return utils.TranslateClientErrorDiag(err, httpresp, "error deleting PagerDuty integration service")
 	}
 
 	return nil
+}
+
+func resourceDatadogIntegrationPagerdutySOImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	originalId := d.Id()
+	if diagErr := resourceDatadogIntegrationPagerdutySORead(ctx, d, meta); diagErr != nil {
+		return nil, fmt.Errorf("%s", diagErr[0].Summary)
+	}
+
+	// We can assume resource was not found for import when `id` is set to nil in the read step
+	if d.Id() == "" {
+		return nil, fmt.Errorf("error importing pagerduty service object. Resource with id `%s` does not exist", originalId)
+	}
+
+	d.Set("service_key", os.Getenv("SERVICE_KEY"))
+	return []*schema.ResourceData{d}, nil
 }

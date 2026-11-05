@@ -3,7 +3,7 @@
 page_title: "datadog_security_monitoring_default_rule Resource - terraform-provider-datadog"
 subcategory: ""
 description: |-
-  Provides a Datadog Security Monitoring Rule API resource for default rules.
+  Provides a Datadog Security Monitoring Rule API resource for default rules. It can only be imported, you can't create a default rule.
 ---
 
 # datadog_security_monitoring_default_rule (Resource)
@@ -29,34 +29,83 @@ resource "datadog_security_monitoring_default_rule" "adefaultrule" {
 
 ### Optional
 
-- **case** (Block List, Max: 5) Cases of the rule, this is used to update notifications. (see [below for nested schema](#nestedblock--case))
-- **enabled** (Boolean) Enable the rule.
-- **filter** (Block List) Additional queries to filter matched events before they are processed. (see [below for nested schema](#nestedblock--filter))
+- `case` (Block List) Cases of the rule, this is used to update notifications. (see [below for nested schema](#nestedblock--case))
+- `custom_message` (String) Custom Message (will override default message) for generated signals.
+- `custom_name` (String) The name (will override default name) of the rule.
+- `custom_tags` (Set of String) Custom tags for generated signals.
+- `enabled` (Boolean) Enable the rule. Defaults to `true`.
+- `filter` (Block List) Additional queries to filter matched events before they are processed. (see [below for nested schema](#nestedblock--filter))
+- `options` (Block List) Options on default rules. Note that only a subset of fields can be updated on default rule options. (see [below for nested schema](#nestedblock--options))
+- `query` (Block List) Queries for selecting logs which are part of the rule. (see [below for nested schema](#nestedblock--query))
 
-### Read-only
+### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
+- `type` (String) The rule type.
 
 <a id="nestedblock--case"></a>
-### Nested schema for `case`
+### Nested Schema for `case`
 
 Required:
 
-- **notifications** (List of String) Notification targets for each rule case.
-- **status** (String) Status of the rule case to match. Valid values are `info`, `low`, `medium`, `high`, `critical`.
+- `status` (String) Status of the rule case to match. Valid values are `info`, `low`, `medium`, `high`, `critical`.
+
+Optional:
+
+- `custom_status` (String) Status of the rule case to override. Valid values are `info`, `low`, `medium`, `high`, `critical`.
+- `notifications` (List of String) Notification targets for each rule case.
 
 
 <a id="nestedblock--filter"></a>
-### Nested schema for `filter`
+### Nested Schema for `filter`
 
 Required:
 
-- **action** (String) The type of filtering action. Allowed enum values: require, suppress Valid values are `require`, `suppress`.
-- **query** (String) Query for selecting logs to apply the filtering action.
+- `action` (String) The type of filtering action. Allowed enum values: require, suppress Valid values are `require`, `suppress`.
+- `query` (String) Query for selecting logs to apply the filtering action.
+
+
+<a id="nestedblock--options"></a>
+### Nested Schema for `options`
+
+Optional:
+
+- `decrease_criticality_based_on_env` (Boolean) If true, signals in non-production environments have a lower severity than what is defined by the rule case, which can reduce noise. The decrement is applied when the environment tag of the signal starts with `staging`, `test`, or `dev`. Only available when the rule type is `log_detection`.
+
+
+<a id="nestedblock--query"></a>
+### Nested Schema for `query`
+
+Optional:
+
+- `agent_rule` (Block List, Deprecated) **Deprecated**. It won't be applied anymore. (see [below for nested schema](#nestedblock--query--agent_rule))
+- `custom_query_extension` (String) Query extension to append to the logs query.
+
+Read-Only:
+
+- `aggregation` (String) The aggregation type.
+- `data_source` (String) Source of events.
+- `distinct_fields` (List of String) Field for which the cardinality is measured. Sent as an array.
+- `group_by_fields` (List of String) Fields to group by.
+- `has_optional_group_by_fields` (Boolean) When false, events without a group-by value are ignored by the rule. When true, events with missing group-by fields are processed with `N/A`, replacing the missing values.
+- `metric` (String, Deprecated) The target field to aggregate over when using the `sum`, `max`, or `geo_data` aggregations.
+- `metrics` (List of String) Group of target fields to aggregate over when using the `sum`, `max`, `geo_data`, or `new_value` aggregations. The `sum`, `max`, and `geo_data` aggregations only accept one value in this list, whereas the `new_value` aggregation accepts up to five values.
+- `name` (String) Name of the query. Not compatible with `new_value` aggregations.
+- `query` (String) Query to run on logs.
+
+<a id="nestedblock--query--agent_rule"></a>
+### Nested Schema for `query.agent_rule`
+
+Required:
+
+- `agent_rule_id` (String) **Deprecated**. It won't be applied anymore.
+- `expression` (String) **Deprecated**. It won't be applied anymore.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 # Default rules need to be imported using their ID before applying.

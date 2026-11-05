@@ -1,14 +1,13 @@
-# Terraform Provider
+# Datadog Terraform Provider
 
--   Website: https://www.terraform.io
--   [![Gitter chat](https://badges.gitter.im/hashicorp-terraform/Lobby.png)](https://gitter.im/hashicorp-terraform/Lobby)
--   Mailing list: [Google Groups](http://groups.google.com/group/terraform-tool)
-
-<img src="https://cdn.rawgit.com/hashicorp/terraform-website/master/content/source/assets/images/logo-hashicorp.svg" width="600px">
+- Website: https://registry.terraform.io/providers/DataDog/datadog/latest
+- Documentation: https://registry.terraform.io/providers/DataDog/datadog/latest/docs
+- Terraform website: https://www.terraform.io
+- [Support](https://help.datadoghq.com/hc/en-us/requests/new)
 
 ## Requirements
 
--   [Terraform](https://www.terraform.io/downloads.html) 0.12.x
+-   [Terraform](https://www.terraform.io/downloads.html) >= 1.1.5
 
 ## Building The Provider
 
@@ -30,6 +29,6 @@ $ make build
 
 ## Using the provider
 
-If you're building the provider, follow the instructions to [install it as a plugin.](https://www.terraform.io/docs/plugins/basics.html#installing-a-plugin) After placing it into your plugins directory, run `terraform init` to initialize it.
+If you're building the provider, follow the instructions to [install it as a plugin.](./DEVELOPMENT.md) After placing it into your plugins directory, run `terraform init` to initialize it.
 
 Further [usage documentation is available on the Terraform website](https://www.terraform.io/docs/providers/datadog/index.html).

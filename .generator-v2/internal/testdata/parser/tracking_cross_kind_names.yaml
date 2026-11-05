@@ -1,0 +1,40 @@
+openapi: 3.0.0
+info:
+  title: tracking cross-kind names fixture
+  version: 1.0.0
+# A resource and a data source share the artifact_name "team". They live in
+# separate Terraform namespaces (datadog_team resource vs datadog_team data
+# source), so this must NOT be reported as a duplicate.
+paths:
+  /teams:
+    post:
+      operationId: CreateTeam
+      responses:
+        '201':
+          description: created
+  /teams/{id}:
+    get:
+      operationId: GetTeam
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ok
+tags:
+- name: Terraform
+  x-datadog-tf-generator:
+    team:
+      resource:
+        artifact_name: team
+        group:
+          create: CreateTeam
+          read: GetTeam
+          delete: CreateTeam
+      datasource_singular:
+        artifact_name: team
+        group:
+          read: GetTeam

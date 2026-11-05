@@ -3,24 +3,44 @@
 page_title: "datadog_integration_gcp Resource - terraform-provider-datadog"
 subcategory: ""
 description: |-
-  Provides a Datadog - Google Cloud Platform integration resource. This can be used to create and manage Datadog - Google Cloud Platform integration.
+  This resource is deprecated—use the datadog_integration_gcp_sts resource instead. Provides a Datadog - Google Cloud Platform integration resource. This can be used to create and manage Datadog - Google Cloud Platform integration.
 ---
 
 # datadog_integration_gcp (Resource)
 
-Provides a Datadog - Google Cloud Platform integration resource. This can be used to create and manage Datadog - Google Cloud Platform integration.
+This resource is deprecated—use the `datadog_integration_gcp_sts` resource instead. Provides a Datadog - Google Cloud Platform integration resource. This can be used to create and manage Datadog - Google Cloud Platform integration.
 
 ## Example Usage
 
 ```terraform
 # Create a new Datadog - Google Cloud Platform integration
 resource "datadog_integration_gcp" "awesome_gcp_project_integration" {
-  project_id     = "awesome-project-id"
-  private_key_id = "1234567890123456789012345678901234567890"
-  private_key    = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-  client_email   = "awesome-service-account@awesome-project-id.iam.gserviceaccount.com"
-  client_id      = "123456789012345678901"
-  host_filters   = "foo:bar,buzz:lightyear"
+  project_id                 = "awesome-project-id"
+  private_key_id             = "1234567890123456789012345678901234567890"
+  private_key                = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+  client_email               = "awesome-service-account@awesome-project-id.iam.gserviceaccount.com"
+  client_id                  = "123456789012345678901"
+  host_filters               = "foo:bar,buzz:lightyear"
+  cloud_run_revision_filters = ["filter_one", "filter_two"]
+}
+
+
+# Usage with google_service_account and google_service_account_key resources
+resource "google_service_account" "datadog" {
+  account_id   = "datadog-integration"
+  display_name = "Datadog Integration"
+}
+
+resource "google_service_account_key" "datadog" {
+  service_account_id = google_service_account.datadog.name
+}
+
+resource "datadog_integration_gcp" "awesome_gcp_project_integration" {
+  project_id     = jsondecode(base64decode(google_service_account_key.datadog.private_key))["project_id"]
+  private_key    = jsondecode(base64decode(google_service_account_key.datadog.private_key))["private_key"]
+  private_key_id = jsondecode(base64decode(google_service_account_key.datadog.private_key))["private_key_id"]
+  client_email   = jsondecode(base64decode(google_service_account_key.datadog.private_key))["client_email"]
+  client_id      = jsondecode(base64decode(google_service_account_key.datadog.private_key))["client_id"]
 }
 ```
 
@@ -29,24 +49,40 @@ resource "datadog_integration_gcp" "awesome_gcp_project_integration" {
 
 ### Required
 
-- **client_email** (String) Your email found in your JSON service account key.
-- **client_id** (String) Your ID found in your JSON service account key.
-- **private_key** (String, Sensitive) Your private key name found in your JSON service account key.
-- **private_key_id** (String) Your private key ID found in your JSON service account key.
-- **project_id** (String) Your Google Cloud project ID found in your JSON service account key.
+- `client_email` (String) Your email found in your JSON service account key.
+- `client_id` (String) Your ID found in your JSON service account key.
+- `private_key` (String, Sensitive) Your private key name found in your JSON service account key.
+- `private_key_id` (String) Your private key ID found in your JSON service account key.
+- `project_id` (String) Your Google Cloud project ID found in your JSON service account key.
 
 ### Optional
 
-- **automute** (Boolean) Silence monitors for expected GCE instance shutdowns.
-- **host_filters** (String) Limit the GCE instances that are pulled into Datadog by using tags. Only hosts that match one of the defined tags are imported into Datadog.
+- `automute` (Boolean) Silence monitors for expected GCE instance shutdowns. Defaults to `false`.
+- `cloud_run_revision_filters` (Set of String, Deprecated) List of filters to limit the Cloud Run revisions that are pulled into Datadog by using tags. Only Cloud Run revision resources that apply to specified filters are imported into Datadog.
+- `cspm_resource_collection_enabled` (Boolean) Whether Datadog collects cloud security posture management resources from your GCP project. If enabled, requires `resource_collection_enabled` to also be enabled. Defaults to `false`.
+- `host_filters` (String, Deprecated) List of filters to limit the VM instances that are pulled into Datadog by using tags. Only VM instance resources that apply to specified filters are imported into Datadog.
+- `is_resource_change_collection_enabled` (Boolean) When enabled, Datadog scans for all resource change data in your Google Cloud environment.
+- `is_security_command_center_enabled` (Boolean) When enabled, Datadog will attempt to collect Security Command Center Findings. Note: This requires additional permissions on the service account. Defaults to `false`.
+- `monitored_resource_configs` (Set of Object) Configurations for GCP monitored resources. Only monitored resources that apply to specified filters are imported into Datadog. (see [below for nested schema](#nestedatt--monitored_resource_configs))
+- `resource_collection_enabled` (Boolean) When enabled, Datadog scans for all resources in your GCP environment.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
+
+<a id="nestedatt--monitored_resource_configs"></a>
+### Nested Schema for `monitored_resource_configs`
+
+Optional:
+
+- `filters` (Set of String)
+- `type` (String)
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 # Google Cloud Platform integrations can be imported using their project ID, e.g.

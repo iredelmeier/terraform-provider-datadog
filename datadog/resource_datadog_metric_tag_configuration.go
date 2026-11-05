@@ -3,13 +3,16 @@ package datadog
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/validators"
 
-	datadogV2 "github.com/DataDog/datadog-api-client-go/api/v2/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
@@ -25,6 +28,12 @@ func resourceDatadogMetricTagConfiguration() *schema.Resource {
 			_, includePercentilesOk := diff.GetOkExists("include_percentiles")
 			oldAggrs, newAggrs := diff.GetChange("aggregations")
 			metricType, metricTypeOk := diff.GetOkExists("metric_type")
+			tags, _ := diff.GetOkExists("tags")
+			excludeTagsMode, _ := diff.GetOkExists("exclude_tags_mode")
+
+			if excludeTagsMode.(bool) && len(tags.(*schema.Set).List()) == 0 {
+				return fmt.Errorf("cannot use exclude_tags_mode without configuring any tags")
+			}
 
 			if !includePercentilesOk && oldAggrs.(*schema.Set).Equal(newAggrs.(*schema.Set)) && !metricTypeOk {
 				// if there was no change to include_percentiles nor aggregations nor metricType we don't need special handling
@@ -42,23 +51,13 @@ func resourceDatadogMetricTagConfiguration() *schema.Resource {
 				if !oldAggrs.(*schema.Set).Equal(newAggrs.(*schema.Set)) {
 					return fmt.Errorf("cannot use aggregations with a metric_type of %s, must use metric_type of 'count','rate', or 'gauge'", metricType)
 				}
-				diff.SetNew("aggregations", nil)
-			} else {
-				// Always add the default aggregation regardless of if the user manually added it or not
-				var defaultAggrCombo map[string]interface{}
-				if *metricTypeValidated == datadogV2.METRICTAGCONFIGURATIONMETRICTYPES_GAUGE {
-					// the avg/avg combo is the default aggregation for gauge metrics
-					defaultAggrCombo = map[string]interface{}{"time": "avg", "space": "avg"}
-				} else {
-					// the sum/sum combo is the default aggregation for count/rates metrics
-					defaultAggrCombo = map[string]interface{}{"time": "sum", "space": "sum"}
-				}
+			}
 
-				newAggrs.(*schema.Set).Add(defaultAggrCombo)
-
-				if err := diff.SetNew("aggregations", newAggrs); err != nil {
-					return err
-				}
+			// Clear aggregations from diff to prevent state flapping.
+			// The aggregations field is deprecated and ignored - the schema's Deprecated field
+			// will show a warning to users who still have it configured.
+			if err := diff.Clear("aggregations"); err != nil {
+				return err
 			}
 
 			return nil
@@ -67,57 +66,66 @@ func resourceDatadogMetricTagConfiguration() *schema.Resource {
 			StateContext: schema.ImportStatePassthroughContext,
 		},
 
-		Schema: map[string]*schema.Schema{
-			"metric_name": {
-				Description:  "The metric name for this resource.",
-				Type:         schema.TypeString,
-				ForceNew:     true,
-				Required:     true,
-				ValidateFunc: validation.All(validation.StringMatch(regexp.MustCompile(`^[A-Za-z][A-Za-z0-9\.\_]*$`), "metric name must be valid"), validation.StringLenBetween(1, 200)),
-			},
-			"metric_type": {
-				Description:      "The metric's type. This field can't be updated after creation.",
-				Type:             schema.TypeString,
-				ForceNew:         true,
-				Required:         true,
-				ValidateDiagFunc: validators.ValidateEnumValue(datadogV2.NewMetricTagConfigurationMetricTypesFromValue),
-			},
-			"tags": {
-				Description: "A list of tag keys that will be queryable for your metric.",
-				Type:        schema.TypeSet,
-				Elem: &schema.Schema{
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"metric_name": {
+					Description:  "The metric name for this resource.",
 					Type:         schema.TypeString,
-					ValidateFunc: validation.All(validation.StringMatch(regexp.MustCompile(`^[A-Za-z][A-Za-z0-9\.\-\_:\/]*[^:]$`), "tags must be valid"), validation.StringLenBetween(1, 200)),
+					ForceNew:     true,
+					Required:     true,
+					ValidateFunc: validation.All(validation.StringMatch(regexp.MustCompile(`^[A-Za-z][A-Za-z0-9\.\_]*$`), "metric name must be valid"), validation.StringLenBetween(1, 200)),
 				},
-				Required: true,
-			},
-			"include_percentiles": {
-				Description: "Toggle to include/exclude percentiles for a distribution metric. Defaults to false. Can only be applied to metrics that have a `metric_type` of distribution.",
-				Type:        schema.TypeBool,
-				Optional:    true,
-			},
-			"aggregations": {
-				Description: "A list of queryable aggregation combinations for a count, rate, or gauge metric. By default, count and rate metrics require the (time: sum, space: sum) aggregation and gauge metrics require the (time: avg, space: avg) aggregation. Can only be applied to metrics that have a `metric_type` of count, rate, or gauge.",
-				Type:        schema.TypeSet,
-				Optional:    true,
-				Computed:    true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"time": {
-							Description:      "A time aggregation for use in query.",
-							Type:             schema.TypeString,
-							ValidateDiagFunc: validators.ValidateEnumValue(datadogV2.NewMetricCustomTimeAggregationFromValue),
-							Required:         true,
-						},
-						"space": {
-							Description:      "A space aggregation for use in query.",
-							Type:             schema.TypeString,
-							ValidateDiagFunc: validators.ValidateEnumValue(datadogV2.NewMetricCustomSpaceAggregationFromValue),
-							Required:         true,
+				"metric_type": {
+					Description:      "The metric's type. This field can't be updated after creation.",
+					Type:             schema.TypeString,
+					ForceNew:         true,
+					Required:         true,
+					ValidateDiagFunc: validators.ValidateEnumValue(datadogV2.NewMetricTagConfigurationMetricTypesFromValue),
+				},
+				"tags": {
+					Description: "A list of tag keys that will be queryable for your metric.",
+					Type:        schema.TypeSet,
+					Elem: &schema.Schema{
+						Type:         schema.TypeString,
+						ValidateFunc: validation.All(validation.StringMatch(regexp.MustCompile(`^[A-Za-z][A-Za-z0-9\.\-\_:\/]*$`), "tags must be valid"), validation.StringLenBetween(1, 200)),
+					},
+					Required: true,
+				},
+				"include_percentiles": {
+					Description: "Toggle to include/exclude percentiles for a distribution metric. Defaults to false. Can only be applied to metrics that have a `metric_type` of distribution.",
+					Type:        schema.TypeBool,
+					Optional:    true,
+				},
+				"aggregations": {
+					Description: "A list of queryable aggregation combinations for a count, rate, or gauge metric. By default, count and rate metrics require the (time: sum, space: sum) aggregation and gauge metrics require the (time: avg, space: avg) aggregation. Can only be applied to metrics that have a `metric_type` of count, rate, or gauge.",
+					Type:        schema.TypeSet,
+					Optional:    true,
+					Computed:    true,
+					Deprecated:  "The 'aggregations' field is no longer supported by the Datadog API and will be ignored. This field will be removed in a future version of the provider.",
+					Elem: &schema.Resource{
+						Schema: map[string]*schema.Schema{
+							"time": {
+								Description:      "A time aggregation for use in query.",
+								Type:             schema.TypeString,
+								ValidateDiagFunc: validators.ValidateEnumValue(datadogV2.NewMetricCustomTimeAggregationFromValue),
+								Required:         true,
+							},
+							"space": {
+								Description:      "A space aggregation for use in query.",
+								Type:             schema.TypeString,
+								ValidateDiagFunc: validators.ValidateEnumValue(datadogV2.NewMetricCustomSpaceAggregationFromValue),
+								Required:         true,
+							},
 						},
 					},
 				},
-			},
+				"exclude_tags_mode": {
+					Description: "Toggle to include/exclude tags as queryable for your metric. Can only be applied to metrics that have one or more tags configured.",
+					Type:        schema.TypeBool,
+					Optional:    true,
+					Default:     false,
+				},
+			}
 		},
 	}
 }
@@ -159,19 +167,25 @@ func buildDatadogMetricTagConfiguration(d *schema.ResourceData) (*datadogV2.Metr
 	}
 	attributes.SetMetricType(*metricType)
 
-	includePercentiles, iclFieldSet := d.GetOk("include_percentiles")
+	includePercentiles := d.Get("include_percentiles")
 
-	if iclFieldSet {
-		if *metricType != datadogV2.METRICTAGCONFIGURATIONMETRICTYPES_DISTRIBUTION {
-			return nil, fmt.Errorf("include_percentiles field not allowed with metric_type: %s, only with metric_type distribution", *metricType)
-		}
-		attributes.SetIncludePercentiles(includePercentiles.(bool))
-	} else {
-		// if the include_percentiles field is not set and the metric is not a distribution, we need to remove the include_percentiles field from the payload
-		if *metricType != datadogV2.METRICTAGCONFIGURATIONMETRICTYPES_DISTRIBUTION {
-			attributes.IncludePercentiles = nil
-		}
+	if includePercentiles.(bool) && *metricType != datadogV2.METRICTAGCONFIGURATIONMETRICTYPES_DISTRIBUTION {
+		return nil, fmt.Errorf("include_percentiles field not allowed with metric_type: %s, only with metric_type distribution", *metricType)
 	}
+
+	if *metricType != datadogV2.METRICTAGCONFIGURATIONMETRICTYPES_DISTRIBUTION {
+		attributes.IncludePercentiles = nil
+	} else {
+		attributes.SetIncludePercentiles(includePercentiles.(bool))
+	}
+
+	excludeTagsMode := d.Get("exclude_tags_mode")
+
+	if excludeTagsMode.(bool) && len(stringTags) == 0 {
+		return nil, fmt.Errorf("cannot use exclude_tags_mode without configuring any tags")
+	}
+
+	attributes.SetExcludeTagsMode(excludeTagsMode.(bool))
 
 	aggregationsArray, aggregationsFieldSet := d.GetOk("aggregations")
 	if aggregationsFieldSet {
@@ -203,18 +217,25 @@ func buildDatadogMetricTagConfigurationUpdate(d *schema.ResourceData, existingMe
 	}
 	attributes.SetTags(stringTags)
 
-	includePercentiles, iclFieldSet := d.GetOk("include_percentiles")
-	if iclFieldSet {
-		if *existingMetricType != datadogV2.METRICTAGCONFIGURATIONMETRICTYPES_DISTRIBUTION {
-			return nil, fmt.Errorf("include_percentiles field not allowed with metric_type: %s, only with metric_type distribution", *existingMetricType)
-		}
-		attributes.SetIncludePercentiles(includePercentiles.(bool))
-	} else {
-		// if the include_percentiles field is not set and the metric is not a distribution, we need to remove the include_percentiles field from the payload
-		if *existingMetricType != datadogV2.METRICTAGCONFIGURATIONMETRICTYPES_DISTRIBUTION {
-			attributes.IncludePercentiles = nil
-		}
+	includePercentiles := d.Get("include_percentiles")
+
+	if includePercentiles.(bool) && *existingMetricType != datadogV2.METRICTAGCONFIGURATIONMETRICTYPES_DISTRIBUTION {
+		return nil, fmt.Errorf("include_percentiles field not allowed with metric_type: %s, only with metric_type distribution", *existingMetricType)
 	}
+
+	if *existingMetricType != datadogV2.METRICTAGCONFIGURATIONMETRICTYPES_DISTRIBUTION {
+		attributes.IncludePercentiles = nil
+	} else {
+		attributes.SetIncludePercentiles(includePercentiles.(bool))
+	}
+
+	excludeTagsMode := d.Get("exclude_tags_mode")
+
+	if excludeTagsMode.(bool) && len(stringTags) == 0 {
+		return nil, fmt.Errorf("cannot use exclude_tags_mode without configuring any tags")
+	}
+
+	attributes.SetExcludeTagsMode(excludeTagsMode.(bool))
 
 	aggregationsArray, aggregationsFieldSet := d.GetOk("aggregations")
 	if aggregationsFieldSet {
@@ -232,10 +253,37 @@ func buildDatadogMetricTagConfigurationUpdate(d *schema.ResourceData, existingMe
 	return result, nil
 }
 
+// createTagConfigurationRetryError classifies the outcome of a
+// CreateTagConfiguration call for retry.RetryContext.
+//
+// A ForceNew change to metric_type makes Terraform do destroy-then-create. The
+// create is issued milliseconds after the delete, but Datadog's tag-config
+// conflict check reads an eventually-consistent store that can still show the
+// just-deleted config for several seconds (minutes when the CDC pipeline is
+// degraded), so the create is rejected with HTTP 409 ("conflicts with existing
+// tag configuration, use PATCH to update"). We retry ONLY on 409 until the
+// delete becomes visible; every other error (and success) is terminal.
+//
+// We intentionally do NOT GET-before-retry: right after a delete the GET reads
+// the same stale store and would return 200, masking the transient race as a
+// real conflict.
+func createTagConfigurationRetryError(metricName string, err error, httpResponse *http.Response) *retry.RetryError {
+	if err == nil {
+		return nil
+	}
+	if httpResponse != nil && httpResponse.StatusCode == http.StatusConflict {
+		return retry.RetryableError(fmt.Errorf(
+			"tag configuration for %q still conflicts with a recently deleted configuration, retrying: %w",
+			metricName, err))
+	}
+	return retry.NonRetryableError(
+		utils.TranslateClientError(err, httpResponse, "error creating MetricTagConfiguration"))
+}
+
 func resourceDatadogMetricTagConfigurationCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV2
-	auth := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	resultMetricTagConfigurationData, err := buildDatadogMetricTagConfiguration(d)
 	if err != nil {
@@ -245,9 +293,18 @@ func resourceDatadogMetricTagConfigurationCreate(ctx context.Context, d *schema.
 	ddObject.SetData(*resultMetricTagConfigurationData)
 	metricName := d.Get("metric_name").(string)
 
-	response, httpResponse, err := datadogClient.MetricsApi.CreateTagConfiguration(auth, metricName, *ddObject)
+	// Retry the create on HTTP 409: after a destroy-then-create (ForceNew on
+	// metric_type), Datadog's eventually-consistent conflict check can still see
+	// the just-deleted config and reject the create. Retry only the 409 until the
+	// delete becomes visible; 30s ceiling with the SDK's built-in backoff.
+	var response datadogV2.MetricTagConfigurationResponse
+	var httpResponse *http.Response
+	err = retry.RetryContext(ctx, 30*time.Second, func() *retry.RetryError {
+		response, httpResponse, err = apiInstances.GetMetricsApiV2().CreateTagConfiguration(auth, metricName, *ddObject)
+		return createTagConfigurationRetryError(metricName, err, httpResponse)
+	})
 	if err != nil {
-		return utils.TranslateClientErrorDiag(err, httpResponse, "error creating MetricTagConfiguration")
+		return diag.FromErr(err)
 	}
 	if err := utils.CheckForUnparsed(response); err != nil {
 		return diag.FromErr(err)
@@ -276,9 +333,9 @@ func updateMetricTagConfigurationState(d *schema.ResourceData, metricTagConfigur
 						aggregationsMap["space"] = aggregation.GetSpace()
 						aggregationsMapArray = append(aggregationsMapArray, aggregationsMap)
 					}
-					if err := d.Set("aggregations", aggregationsMapArray); err != nil {
-						return diag.FromErr(err)
-					}
+				}
+				if err := d.Set("aggregations", aggregationsMapArray); err != nil {
+					return diag.FromErr(err)
 				}
 			}
 		}
@@ -289,6 +346,11 @@ func updateMetricTagConfigurationState(d *schema.ResourceData, metricTagConfigur
 		if err := d.Set("tags", tags); err != nil {
 			return diag.FromErr(err)
 		}
+
+		excludeTagsMode := attributes.GetExcludeTagsMode()
+		if err := d.Set("exclude_tags_mode", excludeTagsMode); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
 	metricName := metricTagConfiguration.GetId()
@@ -297,18 +359,16 @@ func updateMetricTagConfigurationState(d *schema.ResourceData, metricTagConfigur
 	}
 
 	d.SetId(metricName)
-	// we do not care about the created_at nor modified_at fields
-
 	return nil
 }
 
 func resourceDatadogMetricTagConfigurationRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV2
-	auth := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	metricName := d.Id()
-	metricTagConfigurationResponse, httpresp, err := datadogClient.MetricsApi.ListTagConfigurationByName(auth, metricName)
+	metricTagConfigurationResponse, httpresp, err := apiInstances.GetMetricsApiV2().ListTagConfigurationByName(auth, metricName)
 	if err != nil {
 		if httpresp != nil && httpresp.StatusCode == 404 {
 			d.SetId("")
@@ -332,11 +392,11 @@ func resourceDatadogMetricTagConfigurationRead(ctx context.Context, d *schema.Re
 
 func resourceDatadogMetricTagConfigurationUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV2
-	auth := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	metricName := d.Id()
-	metricTagConfigurationResponse, httpresp, err := datadogClient.MetricsApi.ListTagConfigurationByName(auth, metricName)
+	metricTagConfigurationResponse, httpresp, err := apiInstances.GetMetricsApiV2().ListTagConfigurationByName(auth, metricName)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpresp, "metric not found")
 	}
@@ -360,7 +420,7 @@ func resourceDatadogMetricTagConfigurationUpdate(ctx context.Context, d *schema.
 	ddObject := datadogV2.NewMetricTagConfigurationUpdateRequestWithDefaults()
 	ddObject.SetData(*resultMetricTagConfigurationUpdateData)
 
-	response, _, err := datadogClient.MetricsApi.UpdateTagConfiguration(auth, metricName, *ddObject)
+	response, _, err := apiInstances.GetMetricsApiV2().UpdateTagConfiguration(auth, metricName, *ddObject)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpresp, "error updating MetricTagConfiguration")
 	}
@@ -373,12 +433,12 @@ func resourceDatadogMetricTagConfigurationUpdate(ctx context.Context, d *schema.
 
 func resourceDatadogMetricTagConfigurationDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV2
-	auth := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 	var err error
 
 	metricName := d.Id()
-	httpResponse, err := datadogClient.MetricsApi.DeleteTagConfiguration(auth, metricName)
+	httpResponse, err := apiInstances.GetMetricsApiV2().DeleteTagConfiguration(auth, metricName)
 
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error deleting MetricTagConfiguration")

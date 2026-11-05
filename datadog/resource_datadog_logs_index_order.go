@@ -5,7 +5,7 @@ import (
 
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 
-	datadogV1 "github.com/DataDog/datadog-api-client-go/api/v1/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -20,18 +20,21 @@ func resourceDatadogLogsIndexOrder() *schema.Resource {
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
-		Schema: map[string]*schema.Schema{
-			"name": {
-				Description: "The unique name of the index order resource.",
-				Type:        schema.TypeString,
-				Required:    true,
-			},
-			"indexes": {
-				Description: "The index resource list. Logs are tested against the query filter of each index one by one following the order of the list.",
-				Type:        schema.TypeList,
-				Required:    true,
-				Elem:        &schema.Schema{Type: schema.TypeString},
-			},
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"name": {
+					Description: "The unique name of the index order resource.",
+					Type:        schema.TypeString,
+					Optional:    true,
+					Computed:    true,
+				},
+				"indexes": {
+					Description: "The index resource list. Logs are tested against the query filter of each index one by one following the order of the list.",
+					Type:        schema.TypeList,
+					Required:    true,
+					Elem:        &schema.Schema{Type: schema.TypeString},
+				},
+			}
 		},
 	}
 }
@@ -48,15 +51,15 @@ func resourceDatadogLogsIndexOrderUpdate(ctx context.Context, d *schema.Resource
 		ddList[i] = tfName.(string)
 	}
 	ddIndexList.IndexNames = ddList
-	var tfID string
+	var tfID = "logs_index_order"
 	if name, exists := d.GetOk("name"); exists {
 		tfID = name.(string)
 	}
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
-	updatedOrder, httpResponse, err := datadogClientV1.LogsIndexesApi.UpdateLogsIndexOrder(authV1, ddIndexList)
+	updatedOrder, httpResponse, err := apiInstances.GetLogsIndexesApiV1().UpdateLogsIndexOrder(auth, ddIndexList)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error updating logs index list")
 	}
@@ -71,14 +74,17 @@ func updateLogsIndexOrderState(d *schema.ResourceData, order *datadogV1.LogsInde
 	if err := d.Set("indexes", order.GetIndexNames()); err != nil {
 		return diag.FromErr(err)
 	}
+	if _, ok := d.GetOk("name"); !ok {
+		d.Set("name", d.Id())
+	}
 	return nil
 }
 
 func resourceDatadogLogsIndexOrderRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	client := providerConf.DatadogClientV1
-	auth := providerConf.AuthV1
-	ddIndexList, httpResponse, err := client.LogsIndexesApi.GetLogsIndexOrder(auth)
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
+	ddIndexList, httpResponse, err := apiInstances.GetLogsIndexesApiV1().GetLogsIndexOrder(auth)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error getting logs index list")
 	}

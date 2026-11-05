@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestAccDatadogMonitorDatasource(t *testing.T) {
@@ -26,6 +26,11 @@ func TestAccDatadogMonitorDatasource(t *testing.T) {
 				Check:  checkDatasourceAttrs(accProvider, uniq),
 			},
 			{
+				// Create the monitor with restricted_roles (no datasource yet — give API time to propagate)
+				Config: testAccMonitorConfigWithRestrictedRoles(uniq),
+			},
+			{
+				// Now read via datasource — restriction policy should have propagated
 				Config: testAccDatasourceMonitorNameFilterConfig_WithRestrictedRoles(uniq),
 				Check:  checkRestrictedRolesAttr(accProvider, uniq),
 			},
@@ -89,8 +94,6 @@ func checkDatasourceAttrs(accProvider func() (*schema.Provider, error), uniq str
 		resource.TestCheckResourceAttr(
 			"data.datadog_monitor.foo", "require_full_window", "true"),
 		resource.TestCheckResourceAttr(
-			"data.datadog_monitor.foo", "locked", "false"),
-		resource.TestCheckResourceAttr(
 			"data.datadog_monitor.foo", "tags.#", "2"),
 		resource.TestCheckTypeSetElemAttr(
 			"data.datadog_monitor.foo", "tags.*", "baz"),
@@ -103,7 +106,7 @@ func checkRestrictedRolesAttr(accProvider func() (*schema.Provider, error), uniq
 	return resource.ComposeTestCheckFunc(
 		testAccCheckDatadogMonitorExists(accProvider),
 		resource.TestCheckResourceAttr(
-			"datadog_monitor.foo", "restricted_roles.#", "1"),
+			"data.datadog_monitor.foo", "restricted_roles.#", "1"),
 	)
 }
 
@@ -134,13 +137,13 @@ resource "datadog_monitor" "foo" {
   renotify_statuses = ["alert", "warn"]
 
   notify_audit = false
-  timeout_h = 60
+  timeout_h = 10
   new_group_delay = 500
   evaluation_delay = 700
   include_tags = true
   require_full_window = true
-  locked = false
   tags = ["test_datasource_monitor:%s", "baz"]
+  restricted_roles = []
 }`, uniq, uniq, uniq)
 }
 
@@ -175,7 +178,7 @@ resource "datadog_monitor" "foo" {
   renotify_statuses = ["alert", "warn"]
 
   notify_audit = false
-  timeout_h = 60
+  timeout_h = 10
   new_group_delay = 500
   evaluation_delay = 700
   include_tags = true

@@ -6,16 +6,17 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/terraform-providers/terraform-provider-datadog/datadog"
-
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/terraform-providers/terraform-provider-datadog/datadog"
 )
 
 const tfSecurityFiltersSource = "data.datadog_security_monitoring_filters.acceptance_test"
 
 func TestAccDatadogSecurityMonitoringFilterDatasource(t *testing.T) {
+	t.Parallel()
 	_, accProviders := testAccProviders(context.Background(), t)
 	accProvider := testAccProvider(t, accProviders)
 
@@ -37,14 +38,14 @@ func securityMonitoringCheckFilterCount(accProvider func() (*schema.Provider, er
 	return func(state *terraform.State) error {
 		provider, _ := accProvider()
 		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		authV2 := providerConf.AuthV2
-		client := providerConf.DatadogClientV2
+		auth := providerConf.Auth
+		apiInstances := providerConf.DatadogApiInstances
 
-		filtersResponse, _, err := client.SecurityMonitoringApi.ListSecurityFilters(authV2)
+		filtersResponse, _, err := apiInstances.GetSecurityMonitoringApiV2().ListSecurityFilters(auth)
 		if err != nil {
 			return err
 		}
-		return securityMonitoringFilterCount(state, len(*filtersResponse.Data))
+		return securityMonitoringFilterCount(state, len(filtersResponse.Data))
 	}
 }
 

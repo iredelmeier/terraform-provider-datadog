@@ -40,10 +40,8 @@ resource "datadog_dashboard" "time" {
 
 ### Required
 
-- **name** (String) A dashboard list name to limit the search.
+- `name` (String) A dashboard list name to limit the search. String length must be at least 1.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
-
-
+- `id` (String) The ID of this resource.

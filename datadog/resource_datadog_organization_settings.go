@@ -2,13 +2,21 @@ package datadog
 
 import (
 	"context"
+	"fmt"
+	"time"
 
-	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
-
-	datadogV1 "github.com/DataDog/datadog-api-client-go/api/v1/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"github.com/google/go-cmp/cmp"
+	"github.com/hashicorp/go-cty/cty"
+	"github.com/hashicorp/go-cty/cty/gocty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
+
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/validators"
 )
 
 func resourceDatadogOrganizationSettings() *schema.Resource {
@@ -22,139 +30,152 @@ func resourceDatadogOrganizationSettings() *schema.Resource {
 			StateContext: schema.ImportStatePassthroughContext,
 		},
 
-		Schema: map[string]*schema.Schema{
-			"name": {
-				Description:  "Name for Organization.",
-				Type:         schema.TypeString,
-				Optional:     true,
-				ValidateFunc: validation.StringLenBetween(1, 32),
-			},
-			"public_id": {
-				Description: "The `public_id` of the organization you are operating within.",
-				Type:        schema.TypeString,
-				Computed:    true,
-			},
-			"description": {
-				Description: "Description of the organization.",
-				Type:        schema.TypeString,
-				Computed:    true,
-			},
-			"settings": {
-				Description: "Organization settings",
-				Type:        schema.TypeList,
-				Optional:    true,
-				Computed:    true,
-				MaxItems:    1,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"private_widget_share": {
-							Type:        schema.TypeBool,
-							Optional:    true,
-							Default:     false,
-							Description: "Whether or not the organization users can share widgets outside of Datadog.",
-						},
-						"saml": {
-							Type:        schema.TypeList,
-							Required:    true,
-							MaxItems:    1,
-							Description: "SAML properties",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"enabled": {
-										Type:        schema.TypeBool,
-										Optional:    true,
-										Default:     false,
-										Description: "Whether or not SAML is enabled for this organization.",
-									},
-								},
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"name": {
+					Description:  "Name for Organization.",
+					Type:         schema.TypeString,
+					Optional:     true,
+					ValidateFunc: validation.StringLenBetween(1, 32),
+				},
+				"public_id": {
+					Description: "The `public_id` of the organization you are operating within.",
+					Type:        schema.TypeString,
+					Computed:    true,
+				},
+				"description": {
+					Description: "Description of the organization.",
+					Type:        schema.TypeString,
+					Computed:    true,
+				},
+				"security_contacts": {
+					Type:        schema.TypeList,
+					Optional:    true,
+					Computed:    true,
+					Description: "List of emails used for security event notifications from the organization.",
+					Elem: &schema.Schema{
+						Type:             schema.TypeString,
+						Description:      "An email address to be used for security event notifications.",
+						ValidateDiagFunc: validators.ValidateBasicEmail,
+					},
+				},
+				"settings": {
+					Description: "Organization settings",
+					Type:        schema.TypeList,
+					Optional:    true,
+					Computed:    true,
+					MaxItems:    1,
+					Elem: &schema.Resource{
+						Schema: map[string]*schema.Schema{
+							"private_widget_share": {
+								Type:        schema.TypeBool,
+								Optional:    true,
+								Default:     false, // FIXME: leave it "unspecified" by default like the child org schema ?
+								Description: "Whether or not the organization users can share widgets outside of Datadog.",
 							},
-						},
-						"saml_autocreate_access_role": {
-							Type:         schema.TypeString,
-							Optional:     true,
-							Default:      "st",
-							Description:  "The access role of the user. Options are `st` (standard user), `adm` (admin user), or `ro` (read-only user). Allowed enum values: `st`, `adm` , `ro`, `ERROR`",
-							ValidateFunc: validation.StringInSlice([]string{"st", "adm", "ro", "ERROR"}, false),
-						},
-						"saml_autocreate_users_domains": {
-							Type:        schema.TypeList,
-							Required:    true,
-							MaxItems:    1,
-							Description: "List of domains where the SAML automated user creation is enabled.",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"domains": {
-										Type:        schema.TypeList,
-										Optional:    true,
-										Description: "List of domains where the SAML automated user creation is enabled.",
-										Elem: &schema.Schema{
-											Type: schema.TypeString,
+							"saml": {
+								Type:        schema.TypeList,
+								Required:    true,
+								MaxItems:    1,
+								Description: "SAML properties",
+								Elem: &schema.Resource{
+									Schema: map[string]*schema.Schema{
+										"enabled": {
+											Type:        schema.TypeBool,
+											Optional:    true,
+											Default:     false,
+											Description: "Whether or not SAML is enabled for this organization.",
 										},
 									},
-									"enabled": {
-										Type:        schema.TypeBool,
-										Optional:    true,
-										Default:     false,
-										Description: "Whether or not the automated user creation based on SAML domain is enabled.",
+								},
+							},
+							"saml_autocreate_access_role": {
+								Type:         schema.TypeString,
+								Optional:     true,
+								Computed:     true,
+								Description:  "The access role of the user. Options are `st` (standard user), `adm` (admin user), or `ro` (read-only user). Allowed enum values: `st`, `adm`, `ro`, `ERROR`. When omitted, the current value is left unchanged.",
+								ValidateFunc: validation.StringInSlice([]string{"st", "adm", "ro", "ERROR"}, false),
+							},
+							"saml_autocreate_users_domains": {
+								Type:        schema.TypeList,
+								Required:    true,
+								MaxItems:    1,
+								Description: "List of domains where the SAML automated user creation is enabled.",
+								Elem: &schema.Resource{
+									Schema: map[string]*schema.Schema{
+										"domains": {
+											Type:        schema.TypeList,
+											Optional:    true,
+											Description: "List of domains where the SAML automated user creation is enabled.",
+											Elem: &schema.Schema{
+												Type: schema.TypeString,
+											},
+										},
+										"enabled": {
+											Type:        schema.TypeBool,
+											Optional:    true,
+											Default:     false,
+											Description: "Whether or not the automated user creation based on SAML domain is enabled.",
+										},
 									},
 								},
 							},
-						},
-						"saml_can_be_enabled": {
-							Type:        schema.TypeBool,
-							Computed:    true,
-							Description: "Whether or not SAML can be enabled for this organization.",
-						},
-						"saml_idp_endpoint": {
-							Type:        schema.TypeString,
-							Computed:    true,
-							Description: "Identity provider endpoint for SAML authentication.",
-						},
-						"saml_idp_initiated_login": {
-							Type:        schema.TypeList,
-							Required:    true,
-							MaxItems:    1,
-							Description: "Whether or not a SAML identity provider metadata file was provided to the Datadog organization.",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"enabled": {
-										Type:        schema.TypeBool,
-										Optional:    true,
-										Default:     false,
-										Description: "Whether or not a SAML identity provider metadata file was provided to the Datadog organization.",
+							"saml_can_be_enabled": {
+								Type:        schema.TypeBool,
+								Computed:    true,
+								Description: "Whether or not SAML can be enabled for this organization.",
+							},
+							"saml_idp_endpoint": {
+								Type:        schema.TypeString,
+								Computed:    true,
+								Description: "Identity provider endpoint for SAML authentication.",
+							},
+							"saml_idp_initiated_login": {
+								Type:        schema.TypeList,
+								Required:    true,
+								MaxItems:    1,
+								Description: "Whether or not a SAML identity provider metadata file was provided to the Datadog organization.",
+								Elem: &schema.Resource{
+									Schema: map[string]*schema.Schema{
+										"enabled": {
+											Type:        schema.TypeBool,
+											Optional:    true,
+											Default:     false,
+											Description: "Whether or not a SAML identity provider metadata file was provided to the Datadog organization.",
+										},
 									},
 								},
 							},
-						},
-						"saml_idp_metadata_uploaded": {
-							Type:        schema.TypeBool,
-							Computed:    true,
-							Description: "Whether or not a SAML identity provider metadata file was provided to the Datadog organization.",
-						},
-						"saml_login_url": {
-							Type:        schema.TypeString,
-							Computed:    true,
-							Description: "URL for SAML logging.",
-						},
-						"saml_strict_mode": {
-							Type:        schema.TypeList,
-							Required:    true,
-							MaxItems:    1,
-							Description: "Whether or not the SAML strict mode is enabled. If true, all users must log in with SAML.",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"enabled": {
-										Type:        schema.TypeBool,
-										Optional:    true,
-										Default:     false,
-										Description: "Whether or not the SAML strict mode is enabled. If true, all users must log in with SAML.",
+							"saml_idp_metadata_uploaded": {
+								Type:        schema.TypeBool,
+								Computed:    true,
+								Description: "Whether or not a SAML identity provider metadata file was provided to the Datadog organization.",
+							},
+							"saml_login_url": {
+								Type:        schema.TypeString,
+								Computed:    true,
+								Description: "URL for SAML logging.",
+							},
+							"saml_strict_mode": {
+								Type:        schema.TypeList,
+								Required:    true,
+								MaxItems:    1,
+								Description: "Whether or not the SAML strict mode is enabled. If true, all users must log in with SAML.",
+								Elem: &schema.Resource{
+									Schema: map[string]*schema.Schema{
+										"enabled": {
+											Type:        schema.TypeBool,
+											Optional:    true,
+											Default:     false,
+											Description: "Whether or not the SAML strict mode is enabled. If true, all users must log in with SAML.",
+										},
 									},
 								},
 							},
 						},
 					},
 				},
-			},
+			}
 		},
 	}
 }
@@ -189,9 +210,12 @@ func buildDatadogOrganizationUpdateV1Struct(d *schema.ResourceData) *datadogV1.O
 				}
 			}
 
-			// saml_autocreate_access_role
-			if v, ok := settingsSet["saml_autocreate_access_role"]; ok {
-				settings.SetSamlAutocreateAccessRole(datadogV1.AccessRole(v.(string)))
+			// saml_autocreate_access_role: only send the value when it is explicitly set in the
+			// config, so an omitted attribute leaves the current role unchanged instead of forcing a
+			// default. The attribute is Computed, so the resolved settings map can't tell "unset"
+			// apart from a stored value; read the raw config to make that distinction.
+			if roleCty := rawSettingAttr(d, "saml_autocreate_access_role"); !roleCty.IsNull() {
+				settings.SetSamlAutocreateAccessRole(datadogV1.AccessRole(roleCty.AsString()))
 			}
 
 			// saml_autocreate_users_domains
@@ -251,11 +275,12 @@ func buildDatadogOrganizationUpdateV1Struct(d *schema.ResourceData) *datadogV1.O
 }
 
 func resourceDatadogOrganizationSettingsCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	// note: we don't actually create a new organization, we just import the org associated with the current API/APP keys
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
-	resp, httpResponse, err := datadogClientV1.OrganizationsApi.ListOrgs(authV1)
+	resp, httpResponse, err := apiInstances.GetOrganizationsApiV1().ListOrgs(auth)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error getting organization")
 	}
@@ -273,10 +298,10 @@ func resourceDatadogOrganizationSettingsCreate(ctx context.Context, d *schema.Re
 
 func resourceDatadogOrganizationSettingsRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
-	resp, httpResponse, err := datadogClientV1.OrganizationsApi.GetOrg(authV1, d.Id())
+	resp, httpResponse, err := apiInstances.GetOrganizationsApiV1().GetOrg(auth, d.Id())
 	if err != nil {
 		if httpResponse != nil && httpResponse.StatusCode == 404 {
 			d.SetId("")
@@ -284,29 +309,27 @@ func resourceDatadogOrganizationSettingsRead(ctx context.Context, d *schema.Reso
 		}
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error getting organization")
 	}
-
 	org := resp.GetOrg()
-	d.SetId(org.GetPublicId())
 
-	return updateOrganizationState(d, &org)
+	diags := updateOrganizationState(d, &org)
+	diags = append(diags, readSecurityContacts(providerConf, d)...)
+	return diags
 }
 
 func resourceDatadogOrganizationSettingsUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
-	resp, httpResponse, err := datadogClientV1.OrganizationsApi.UpdateOrg(authV1, d.Id(), *buildDatadogOrganizationUpdateV1Struct(d))
+	resp, httpResponse, err := apiInstances.GetOrganizationsApiV1().UpdateOrg(auth, d.Id(), *buildDatadogOrganizationUpdateV1Struct(d))
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error updating organization")
 	}
-
 	org := resp.GetOrg()
 
-	publicId := org.GetPublicId()
-	d.SetId(publicId)
-
-	return updateOrganizationState(d, &org)
+	diags := updateOrganizationState(d, &org)
+	diags = append(diags, updateSecurityContacts(providerConf, d)...)
+	return diags
 }
 
 func resourceDatadogOrganizationSettingsDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -317,4 +340,110 @@ func resourceDatadogOrganizationSettingsDelete(ctx context.Context, d *schema.Re
 		Summary:  "Cannot delete organization settings.",
 		Detail:   "Remove organization by contacting support (https://docs.datadoghq.com/help/).",
 	})
+}
+
+/// Security Contacts ///
+
+func readSecurityContacts(pc *ProviderConfiguration, d *schema.ResourceData) diag.Diagnostics {
+	body, resp, err := pc.DatadogApiInstances.GetOrganizationsApiV2().GetOrgConfig(pc.Auth, "security_contacts")
+	if err != nil {
+		// this API should not return 404, a default config value is always provided
+		return utils.TranslateClientErrorDiag(err, resp, "error getting security_contacts")
+	}
+
+	return updateSecurityContactState(body, d)
+}
+
+func updateSecurityContacts(pc *ProviderConfiguration, d *schema.ResourceData) diag.Diagnostics {
+	// ResourceData.HasChange doesn't work well with (nullable) slices: it uses the zero value (empty) even for
+	// unset config or missing state, so we manually check the raw values.
+	stateValue, diags := readNullableCtyAttr[[]string](d.GetRawState(), "security_contacts")
+	if diags != nil {
+		return diags
+	}
+	configValue, diags := readNullableCtyAttr[[]string](d.GetRawConfig(), "security_contacts")
+	if diags != nil {
+		return diags
+	}
+
+	// Skip the update when the config is unset or no change is needed.
+	if configValue == nil || cmp.Equal(stateValue, configValue) {
+		if stateValue == nil { // usually happens for brand-new resources
+			return readSecurityContacts(pc, d)
+		}
+		return nil
+	}
+	newValue := *configValue
+
+	body, resp, err := pc.DatadogApiInstances.GetOrganizationsApiV2().UpdateOrgConfig(pc.Auth, "security_contacts", datadogV2.OrgConfigWriteRequest{
+		Data: datadogV2.OrgConfigWrite{
+			Type: "org_configs", // required by the API
+			Attributes: datadogV2.OrgConfigWriteAttributes{
+				Value: newValue,
+			},
+		},
+	})
+	if err != nil {
+		return utils.TranslateClientErrorDiag(err, resp, "error setting security_contacts")
+	}
+
+	// The org_configs read API appears to be eventually consistent, so we wait for reads to return the new value.
+	// This is obviously a race condition: with concurrent updates we might never witness our own.
+	ctx := context.Background()
+	err = retry.RetryContext(ctx, 10*time.Second, func() *retry.RetryError {
+		body, _, err := pc.DatadogApiInstances.GetOrganizationsApiV2().GetOrgConfig(pc.Auth, "security_contacts")
+		if err != nil {
+			return retry.NonRetryableError(fmt.Errorf("unable to check security_contacts: %w", err))
+		}
+		remoteValue := utils.AnyToSlice[string](body.Data.Attributes.Value)
+		if cmp.Equal(newValue, remoteValue) {
+			return nil
+		} else {
+			return retry.RetryableError(fmt.Errorf("security_contacts not updated yet"))
+		}
+	})
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("while waiting for security_contacts update: %w", err))
+	}
+
+	return updateSecurityContactState(body, d)
+}
+
+// rawSettingAttr returns the raw config value of an attribute inside the (single) settings block,
+// or a null value when the settings block or the attribute is absent. It lets the update logic tell
+// an explicitly-set attribute apart from an omitted one, which d.GetOk cannot do for a Computed attribute.
+func rawSettingAttr(d *schema.ResourceData, attr string) cty.Value {
+	root := d.GetRawConfig()
+	if root.IsNull() {
+		return cty.NullVal(cty.String)
+	}
+	settings := root.GetAttr("settings")
+	if settings.IsNull() || !settings.CanIterateElements() || settings.LengthInt() == 0 {
+		return cty.NullVal(cty.String)
+	}
+	first := settings.Index(cty.NumberIntVal(0))
+	if first.IsNull() {
+		return cty.NullVal(cty.String)
+	}
+	return first.GetAttr(attr)
+}
+
+func readNullableCtyAttr[T any](root cty.Value, attr string) (*T, diag.Diagnostics) {
+	if root.IsNull() {
+		return nil, nil
+	}
+	ctyValue := root.GetAttr(attr)
+	if ctyValue.IsNull() {
+		return nil, nil
+	}
+	var value T
+	if err := gocty.FromCtyValue(ctyValue, &value); err != nil {
+		return nil, diag.FromErr(fmt.Errorf("error reading cty attr '%s': %w", attr, err))
+	}
+	return &value, nil
+}
+
+func updateSecurityContactState(remote datadogV2.OrgConfigGetResponse, d *schema.ResourceData) diag.Diagnostics {
+	value := utils.AnyToSlice[string](remote.Data.Attributes.Value)
+	return diag.FromErr(d.Set("security_contacts", value))
 }

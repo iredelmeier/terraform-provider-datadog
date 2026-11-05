@@ -33,6 +33,9 @@ var monitorComputedFields = []string{
 	"overall_state",
 	"overall_state_modified",
 	"url",
+	"draft_status",
+	"restricted",
+	"run_as",
 }
 
 const monitorPath = "/api/v1/monitor"
@@ -63,50 +66,89 @@ func resourceDatadogMonitorJSON() *schema.Resource {
 
 			return oldType != newType
 		}),
-		Schema: map[string]*schema.Schema{
-			"monitor": {
-				Type:         schema.TypeString,
-				Required:     true,
-				ValidateFunc: validation.StringIsJSON,
-				StateFunc: func(v interface{}) string {
-					// Remove computed fields when comparing diffs
-					attrMap, _ := structure.ExpandJsonFromString(v.(string))
-					for _, f := range monitorComputedFields {
-						utils.DeleteKeyInMap(attrMap, strings.Split(f, "."))
-					}
-					if name, ok := attrMap["name"]; ok {
-						if name, ok := name.(string); ok {
-							attrMap["name"] = strings.TrimSpace(name)
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"monitor": {
+					Type:         schema.TypeString,
+					Required:     true,
+					ValidateFunc: validation.StringIsJSON,
+					StateFunc: func(v interface{}) string {
+						// Remove computed fields when comparing diffs
+						attrMap, _ := structure.ExpandJsonFromString(v.(string))
+						for _, f := range monitorComputedFields {
+							utils.DeleteKeyInMap(attrMap, strings.Split(f, "."))
 						}
-					}
-					if msg, ok := attrMap["message"]; ok {
-						if msg, ok := msg.(string); ok {
-							attrMap["message"] = strings.TrimSpace(msg)
+						if name, ok := attrMap["name"]; ok {
+							if name, ok := name.(string); ok {
+								attrMap["name"] = strings.TrimSpace(name)
+							}
 						}
-					}
+						if msg, ok := attrMap["message"]; ok {
+							if msg, ok := msg.(string); ok {
+								attrMap["message"] = strings.TrimSpace(msg)
+							}
+						}
 
-					res, _ := structure.FlattenJsonToString(attrMap)
-					return res
+						// restricted_roles is a special case and exporting the field from UI does not include this field. But the api
+						// returns a `null` value on creation. If null we remove the field from state to avoid unnecessary diffs.
+						if val := reflect.ValueOf(attrMap["restricted_roles"]); !val.IsValid() {
+							utils.DeleteKeyInMap(attrMap, []string{"restricted_roles"})
+						}
+						if val := reflect.ValueOf(attrMap["restriction_policy"]); !val.IsValid() {
+							utils.DeleteKeyInMap(attrMap, []string{"restriction_policy"})
+						}
+
+						res, _ := structure.FlattenJsonToString(attrMap)
+						return res
+					},
+					Description: "The JSON formatted definition of the monitor.",
 				},
-				Description: "The JSON formatted definition of the monitor.",
-			},
-			"url": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Computed:    true,
-				Description: "The URL of the monitor.",
-			},
+				"url": {
+					Type:        schema.TypeString,
+					Optional:    true,
+					Computed:    true,
+					Description: "The URL of the monitor.",
+				},
+			}
 		},
 	}
 }
 
 func resourceDatadogMonitorJSONRead(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	id := d.Id()
-	respByte, httpResp, err := utils.SendRequest(authV1, datadogClientV1, "GET", monitorPath+"/"+id, nil)
+	url := monitorPath + "/" + id
+
+	// Check if restricted_roles is defined in the JSON, if not explicitly
+	// defined, we tell the API to not return it so there is no diff. Get
+	// ("monitor") shouldn't be trusted as it's not the raw values, but we
+	// try to keep restricted_roles from mixing into it from API responses
+	monitor := d.Get("monitor").(string)
+	attrMap, _ := structure.ExpandJsonFromString(monitor)
+
+	params := []string{}
+	if _, ok := attrMap["restricted_roles"]; !ok {
+		params = append(params, "with_restricted_roles=false")
+	}
+
+	// only query for monitor restriction policy if they are explicitly defined in the JSON
+	if _, ok := attrMap["restriction_policy"]; ok {
+		params = append(params, "with_restriction_policy=true")
+	}
+
+	// only query for monitor assets if they are explicitly defined in the JSON
+	if _, ok := attrMap["assets"]; ok {
+		params = append(params, "with_assets=true")
+	}
+
+	if len(params) > 0 {
+		url += "?" + strings.Join(params, "&")
+	}
+
+	respByte, httpResp, err := utils.SendRequest(auth, apiInstances.HttpClient, "GET", url, nil)
 	if err != nil {
 		if httpResp != nil && httpResp.StatusCode == 404 {
 			d.SetId("")
@@ -125,12 +167,12 @@ func resourceDatadogMonitorJSONRead(_ context.Context, d *schema.ResourceData, m
 
 func resourceDatadogMonitorJSONCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	monitor := d.Get("monitor").(string)
 
-	respByte, httpresp, err := utils.SendRequest(authV1, datadogClientV1, "POST", monitorPath, &monitor)
+	respByte, httpresp, err := utils.SendRequest(auth, apiInstances.HttpClient, "POST", monitorPath, &monitor)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpresp, "error creating resource")
 	}
@@ -152,13 +194,13 @@ func resourceDatadogMonitorJSONCreate(ctx context.Context, d *schema.ResourceDat
 
 func resourceDatadogMonitorJSONUpdate(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	monitor := d.Get("monitor").(string)
 	id := d.Id()
 
-	respByte, httpresp, err := utils.SendRequest(authV1, datadogClientV1, "PUT", monitorPath+"/"+id, &monitor)
+	respByte, httpresp, err := utils.SendRequest(auth, apiInstances.HttpClient, "PUT", monitorPath+"/"+id, &monitor)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpresp, "error updating monitor")
 	}
@@ -173,12 +215,12 @@ func resourceDatadogMonitorJSONUpdate(_ context.Context, d *schema.ResourceData,
 
 func resourceDatadogMonitorJSONDelete(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	id := d.Id()
 
-	_, httpresp, err := utils.SendRequest(authV1, datadogClientV1, "DELETE", monitorPath+"/"+id, nil)
+	_, httpresp, err := utils.SendRequest(auth, apiInstances.HttpClient, "DELETE", monitorPath+"/"+id, nil)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpresp, "error deleting monitor")
 	}
@@ -202,6 +244,27 @@ func updateMonitorJSONState(d *schema.ResourceData, monitor map[string]interface
 	// returns a `null` value on creation. If null we remove the field from state to avoid unnecessary diffs.
 	if val := reflect.ValueOf(monitor["restricted_roles"]); !val.IsValid() {
 		utils.DeleteKeyInMap(monitor, []string{"restricted_roles"})
+	}
+	if val := reflect.ValueOf(monitor["restriction_policy"]); !val.IsValid() {
+		utils.DeleteKeyInMap(monitor, []string{"restriction_policy"})
+	}
+	// In addition to checking the API response, we check to see if the user
+	// specified restricted_roles in the config. Note: the value returned
+	// from the ResourceData is not the raw value - it's mixed with state.
+	// However, using GetRawConfig only returns null values here. If the user
+	// did not specify restricted_roles, do not store them in the state -
+	// treat them as a separately managed resource, likely in restriction
+	// policy resource.
+	attrMap, _ := structure.ExpandJsonFromString(d.Get("monitor").(string))
+	if val := reflect.ValueOf(attrMap["restricted_roles"]); !val.IsValid() {
+		utils.DeleteKeyInMap(monitor, []string{"restricted_roles"})
+	}
+
+	// If the user did not specify assets in the config, do not store them
+	// in the state to avoid unnecessary diffs when the API returns an empty
+	// assets array.
+	if val := reflect.ValueOf(attrMap["assets"]); !val.IsValid() {
+		utils.DeleteKeyInMap(monitor, []string{"assets"})
 	}
 
 	monitorString, err := structure.FlattenJsonToString(monitor)

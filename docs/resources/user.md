@@ -31,24 +31,26 @@ resource "datadog_user" "foo" {
 
 ### Required
 
-- **email** (String) Email address for user.
+- `email` (String) Email address for user.
 
 ### Optional
 
-- **disabled** (Boolean) Whether the user is disabled.
-- **name** (String) Name for user.
-- **roles** (Set of String) A list a role IDs to assign to the user.
-- **send_user_invitation** (Boolean) Whether an invitation email should be sent when the user is created.
+- `disabled` (Boolean) Whether the user is disabled. Defaults to `false`.
+- `name` (String) User's name. Should be set only for password authentication, as it is overridden by Google or SAML authentication.
+- `roles` (Set of String) A list of role IDs to assign to the user.
+- `send_user_invitation` (Boolean) Whether an invitation email should be sent when the user is created. Defaults to `true`.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
-- **user_invitation_id** (String) The ID of the user invitation that was sent when creating the user.
-- **verified** (Boolean) Returns `true` if the user is verified.
+- `id` (String) The ID of this resource.
+- `user_invitation_id` (String) The ID of the user invitation that was sent when creating the user.
+- `verified` (Boolean) Returns `true` if the user is verified.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 terraform import datadog_user.example_user 6f1b44c0-30b2-11eb-86bc-279f7c1ebaa4

@@ -11,7 +11,8 @@ import (
 
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 
-	datadogV2 "github.com/DataDog/datadog-api-client-go/api/v2/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -22,54 +23,56 @@ func dataSourceDatadogSecurityMonitoringRules() *schema.Resource {
 		Description: "Use this data source to retrieve information about existing security monitoring rules for use in other resources.",
 		ReadContext: dataSourceDatadogSecurityMonitoringRulesRead,
 
-		Schema: map[string]*schema.Schema{
-			// Filters
-			"name_filter": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				Description:  "A rule name to limit the search",
-				ValidateFunc: validation.StringIsNotEmpty,
-			},
-			"tags_filter": {
-				Type:        schema.TypeList,
-				Optional:    true,
-				Description: "A list of tags to limit the search",
-				Elem:        &schema.Schema{Type: schema.TypeString},
-			},
-			"default_only_filter": {
-				Type:        schema.TypeBool,
-				Optional:    true,
-				Description: "Limit the search to default rules",
-			},
-			"user_only_filter": {
-				Type:        schema.TypeBool,
-				Optional:    true,
-				Description: "Limit the search to user rules",
-			},
-
-			// Computed
-			"rule_ids": {
-				Description: "List of IDs of the matched rules.",
-				Type:        schema.TypeList,
-				Computed:    true,
-				Elem:        &schema.Schema{Type: schema.TypeString},
-			},
-			"rules": {
-				Description: "List of rules.",
-				Type:        schema.TypeList,
-				Computed:    true,
-				Elem: &schema.Resource{
-					Schema: datadogSecurityMonitoringRuleSchema(),
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				// Filters
+				"name_filter": {
+					Type:         schema.TypeString,
+					Optional:     true,
+					Description:  "A rule name to limit the search",
+					ValidateFunc: validation.StringIsNotEmpty,
 				},
-			},
+				"tags_filter": {
+					Type:        schema.TypeList,
+					Optional:    true,
+					Description: "A list of tags to limit the search",
+					Elem:        &schema.Schema{Type: schema.TypeString},
+				},
+				"default_only_filter": {
+					Type:        schema.TypeBool,
+					Optional:    true,
+					Description: "Limit the search to default rules",
+				},
+				"user_only_filter": {
+					Type:        schema.TypeBool,
+					Optional:    true,
+					Description: "Limit the search to user rules",
+				},
+
+				// Computed
+				"rule_ids": {
+					Description: "List of IDs of the matched rules.",
+					Type:        schema.TypeList,
+					Computed:    true,
+					Elem:        &schema.Schema{Type: schema.TypeString},
+				},
+				"rules": {
+					Description: "List of rules.",
+					Type:        schema.TypeList,
+					Computed:    true,
+					Elem: &schema.Resource{
+						Schema: datadogSecurityMonitoringRuleSchema( /* includeValidate= */ false),
+					},
+				},
+			}
 		},
 	}
 }
 
 func dataSourceDatadogSecurityMonitoringRulesRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV2 := providerConf.DatadogClientV2
-	authV2 := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	var nameFilter *string
 	var defaultFilter *bool
@@ -105,27 +108,33 @@ func dataSourceDatadogSecurityMonitoringRulesRead(ctx context.Context, d *schema
 	ruleIds := make([]string, 0)
 	rules := make([]map[string]interface{}, 0)
 	page := int64(0)
-
 	for {
-		response, httpresp, err := datadogClientV2.SecurityMonitoringApi.ListSecurityMonitoringRules(authV2,
+		response, httpresp, err := apiInstances.GetSecurityMonitoringApiV2().ListSecurityMonitoringRules(auth,
 			datadogV2.ListSecurityMonitoringRulesOptionalParameters{
-				PageNumber: datadogV2.PtrInt64(page),
-				PageSize:   datadogV2.PtrInt64(100),
+				PageNumber: datadog.PtrInt64(page),
+				PageSize:   datadog.PtrInt64(100),
 			})
 
 		if err != nil {
 			return utils.TranslateClientErrorDiag(err, httpresp, "error listing rules")
 		}
-		if err := utils.CheckForUnparsed(response); err != nil {
-			return diag.FromErr(err)
-		}
 
-		for _, rule := range response.GetData() {
-			if !matchesSecMonRuleFilters(rule, nameFilter, defaultFilter, tagFilter) {
-				continue
+		for _, ruleR := range response.GetData() {
+			if ruleR.SecurityMonitoringStandardRuleResponse != nil {
+				rule := ruleR.SecurityMonitoringStandardRuleResponse
+				if !matchesSecMonRuleFilters(rule.GetName(), rule.GetIsDefault(), rule.GetTags(), nameFilter, defaultFilter, tagFilter) {
+					continue
+				}
+				ruleIds = append(ruleIds, rule.GetId())
+				rules = append(rules, buildSecurityMonitoringTfStandardRule(rule))
+			} else if ruleR.SecurityMonitoringSignalRuleResponse != nil {
+				rule := ruleR.SecurityMonitoringSignalRuleResponse
+				if !matchesSecMonRuleFilters(rule.GetName(), rule.GetIsDefault(), rule.GetTags(), nameFilter, defaultFilter, tagFilter) {
+					continue
+				}
+				ruleIds = append(ruleIds, rule.GetId())
+				rules = append(rules, buildSecurityMonitoringTfSignalRule(rule))
 			}
-			ruleIds = append(ruleIds, rule.GetId())
-			rules = append(rules, buildSecurityMonitoringTfRule(rule))
 		}
 
 		totalCount := *response.Meta.GetPage().TotalCount
@@ -179,22 +188,10 @@ func computeSecMonDataSourceRulesID(nameFilter *string, defaultFilter *bool, tag
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func buildSecurityMonitoringTfRule(rule datadogV2.SecurityMonitoringRuleResponse) map[string]interface{} {
+func buildSecurityMonitoringTfCommonRule(rule securityMonitoringRuleResponseInterface) map[string]interface{} {
 	tfRule := make(map[string]interface{})
 
-	cases := make([]map[string]interface{}, len(rule.GetCases()))
-	for i, ruleCase := range rule.GetCases() {
-		tfRuleCase := make(map[string]interface{})
-		tfRuleCase["name"] = ruleCase.GetName()
-		tfRuleCase["condition"] = ruleCase.GetCondition()
-		tfRuleCase["status"] = ruleCase.Status
-		if notifications, ok := ruleCase.GetNotificationsOk(); ok {
-			tfRuleCase["notifications"] = notifications
-		}
-		cases[i] = tfRuleCase
-	}
-	tfRule["case"] = cases
-
+	tfRule["case"] = extractRuleCases(rule.GetCases())
 	tfRule["enabled"] = rule.GetIsEnabled()
 	tfRule["message"] = rule.GetMessage()
 	tfRule["name"] = rule.GetName()
@@ -203,11 +200,30 @@ func buildSecurityMonitoringTfRule(rule datadogV2.SecurityMonitoringRuleResponse
 	tfOptions := extractTfOptions(rule.GetOptions())
 	tfRule["options"] = []map[string]interface{}{tfOptions}
 
+	if tags, ok := rule.GetTagsOk(); ok {
+		tfRule["tags"] = *tags
+	}
+
+	filters := extractFiltersFromRuleResponse(rule.GetFilters())
+	tfRule["filter"] = filters
+
+	return tfRule
+}
+
+func buildSecurityMonitoringTfStandardRule(rule *datadogV2.SecurityMonitoringStandardRuleResponse) map[string]interface{} {
+	tfRule := buildSecurityMonitoringTfCommonRule(rule)
+
 	tfQueries := make([]map[string]interface{}, len(rule.GetQueries()))
 	for i, query := range rule.GetQueries() {
 		tfQuery := make(map[string]interface{})
 		if aggregation, ok := query.GetAggregationOk(); ok {
 			tfQuery["aggregation"] = string(*aggregation)
+		}
+		if dataSource, ok := query.GetDataSourceOk(); ok {
+			tfQuery["data_source"] = string(*dataSource)
+		}
+		if hasOptionalGroupByFields, ok := query.GetHasOptionalGroupByFieldsOk(); ok {
+			tfQuery["has_optional_group_by_fields"] = *hasOptionalGroupByFields
 		}
 		if distinctFields, ok := query.GetDistinctFieldsOk(); ok {
 			tfQuery["distinct_fields"] = *distinctFields
@@ -226,12 +242,35 @@ func buildSecurityMonitoringTfRule(rule datadogV2.SecurityMonitoringRuleResponse
 	}
 	tfRule["query"] = tfQueries
 
-	if tags, ok := rule.GetTagsOk(); ok {
-		tfRule["tags"] = *tags
+	if ruleType, ok := rule.GetTypeOk(); ok {
+		tfRule["type"] = *ruleType
 	}
 
-	filters := extractFiltersFromRuleResponse(rule)
-	tfRule["filter"] = filters
+	return tfRule
+}
+
+func buildSecurityMonitoringTfSignalRule(rule *datadogV2.SecurityMonitoringSignalRuleResponse) map[string]interface{} {
+	tfRule := buildSecurityMonitoringTfCommonRule(rule)
+
+	tfQueries := make([]map[string]interface{}, len(rule.GetQueries()))
+	for i, query := range rule.GetQueries() {
+		tfQuery := make(map[string]interface{})
+		if aggregation, ok := query.GetAggregationOk(); ok {
+			tfQuery["aggregation"] = string(*aggregation)
+		}
+		if correlatedByFields, ok := query.GetCorrelatedByFieldsOk(); ok {
+			tfQuery["correlated_by_fields"] = *correlatedByFields
+		}
+		if correlatedQueryIndex, ok := query.GetCorrelatedQueryIndexOk(); ok {
+			tfQuery["correlated_query_index"] = fmt.Sprintf("%d", *correlatedQueryIndex)
+		}
+		if name, ok := query.GetNameOk(); ok {
+			tfQuery["name"] = *name
+		}
+		tfQuery["rule_id"] = query.GetRuleId()
+		tfQueries[i] = tfQuery
+	}
+	tfRule["signal_query"] = tfQueries
 
 	if ruleType, ok := rule.GetTypeOk(); ok {
 		tfRule["type"] = *ruleType
@@ -241,25 +280,26 @@ func buildSecurityMonitoringTfRule(rule datadogV2.SecurityMonitoringRuleResponse
 }
 
 func matchesSecMonRuleFilters(
-	rule datadogV2.SecurityMonitoringRuleResponse,
+	ruleName string,
+	ruleDefaultFilter bool,
+	ruleTags []string,
 	nameFilter *string,
 	defaultFilter *bool,
 	tagFilter map[string]bool) bool {
 
 	if nameFilter != nil {
-		name := *rule.Name
-		if !strings.Contains(name, *nameFilter) {
+		if !strings.Contains(ruleName, *nameFilter) {
 			return false
 		}
 	}
 	if defaultFilter != nil {
-		if *rule.IsDefault != *defaultFilter {
+		if ruleDefaultFilter != *defaultFilter {
 			return false
 		}
 	}
 	if tagFilter != nil {
 		matchedTagCount := 0
-		for _, tag := range *rule.Tags {
+		for _, tag := range ruleTags {
 			if _, ok := tagFilter[tag]; ok {
 				matchedTagCount++
 			}

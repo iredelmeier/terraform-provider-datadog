@@ -5,151 +5,218 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/terraform-providers/terraform-provider-datadog/datadog"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/statecheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/fwprovider"
 )
 
-func testAccCheckDatadogIntegrationGCPConfig(uniq string) string {
-	return fmt.Sprintf(`
-resource "datadog_integration_gcp" "awesome_gcp_project_integration" {
-  project_id     = "%s"
-  private_key_id = "1234567890123456789012345678901234567890"
-  private_key    = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-  client_email   = "%s@awesome-project-id.iam.gserviceaccount.com"
-  client_id      = "123456789012345678901"
-  host_filters   = "foo:bar,buzz:lightyear"
-}`, uniq, uniq)
-}
-
-func testAccCheckDatadogIntegrationGCPEmptyHostFiltersConfig(uniq string) string {
-	return fmt.Sprintf(`
-resource "datadog_integration_gcp" "awesome_gcp_project_integration" {
-  project_id     = "%s"
-  private_key_id = "1234567890123456789012345678901234567890"
-  private_key    = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-  client_email   = "%s@awesome-project-id.iam.gserviceaccount.com"
-  client_id      = "123456789012345678901"
-}`, uniq, uniq)
-}
-
-func testAccCheckDatadogIntegrationGCPUpdatePrivateKeyConfig(uniq string) string {
-	return fmt.Sprintf(`
-resource "datadog_integration_gcp" "awesome_gcp_project_integration" {
-  project_id     = "%s"
-  private_key_id = "1234567890123456789012345678901234567890"
-  private_key    = "-----BEGIN PRIVATE KEY-----\n key updated \n-----END PRIVATE KEY-----\n"
-  client_email   = "%s@awesome-project-id.iam.gserviceaccount.com"
-  client_id      = "123456789012345678901"
-  automute       = true
-}`, uniq, uniq)
-}
-
-func TestAccDatadogIntegrationGCP(t *testing.T) {
-	ctx, accProviders := testAccProviders(context.Background(), t)
-	client := uniqueEntityName(ctx, t)
-	accProvider := testAccProvider(t, accProviders)
+// fixes this issue: https://github.com/DataDog/terraform-provider-datadog/issues/3435
+func Test_ReplacingHostFiltersWithMRC(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	uniq := uniqueEntityName(ctx, t)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: accProviders,
-		CheckDestroy:      checkIntegrationGCPDestroy(accProvider),
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             checkIntegrationGCPDestroy(providers.frameworkProvider),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccCheckDatadogIntegrationGCPConfig(client),
-				Check: resource.ComposeTestCheckFunc(
-					checkIntegrationGCPExists(accProvider),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"project_id", client),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"private_key_id", "1234567890123456789012345678901234567890"),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"private_key", "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"client_email", fmt.Sprintf("%s@awesome-project-id.iam.gserviceaccount.com", client)),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"client_id", "123456789012345678901"),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"host_filters", "foo:bar,buzz:lightyear"),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"automute", "false"),
-				),
+				Config: fmt.Sprintf(`
+					resource "datadog_integration_gcp" "awesome_gcp_project_integration" {
+					  project_id                 = "%s"
+					  private_key_id             = "1234567890123456789012345678901234567890"
+					  private_key                = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+					  client_email               = "%s@awesome-project-id.iam.gserviceaccount.com"
+					  client_id                  = "123456789012345678901"
+					  host_filters               = "host:one"
+					}`, uniq, uniq),
+				Check: resource.ComposeTestCheckFunc(checkIntegrationGCPExists(providers.frameworkProvider)),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("project_id"), knownvalue.StringExact(uniq)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("private_key_id"), knownvalue.StringExact("1234567890123456789012345678901234567890")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("private_key"), knownvalue.StringExact("-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("client_email"), knownvalue.StringExact(fmt.Sprintf("%s@awesome-project-id.iam.gserviceaccount.com", uniq))),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("client_id"), knownvalue.StringExact("123456789012345678901")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("automute"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("cspm_resource_collection_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("is_security_command_center_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("resource_collection_enabled"), knownvalue.Bool(true)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("is_resource_change_collection_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("host_filters"), knownvalue.StringExact("host:one")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("monitored_resource_configs"), knownvalue.SetExact([]knownvalue.Check{
+						knownvalue.ObjectExact(map[string]knownvalue.Check{
+							"type": knownvalue.StringExact("gce_instance"),
+							"filters": knownvalue.SetExact([]knownvalue.Check{
+								knownvalue.StringExact("host:one"),
+							}),
+						}),
+					})),
+				},
 			},
 			{
-				Config: testAccCheckDatadogIntegrationGCPEmptyHostFiltersConfig(client),
-				Check: resource.ComposeTestCheckFunc(
-					checkIntegrationGCPExists(accProvider),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"project_id", client),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"private_key_id", "1234567890123456789012345678901234567890"),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"private_key", "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"client_email", fmt.Sprintf("%s@awesome-project-id.iam.gserviceaccount.com", client)),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"client_id", "123456789012345678901"),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"host_filters", ""),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"automute", "false"),
-				),
-			},
-			{
-				Config: testAccCheckDatadogIntegrationGCPUpdatePrivateKeyConfig(client),
-				Check: resource.ComposeTestCheckFunc(
-					checkIntegrationGCPExists(accProvider),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"project_id", client),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"private_key_id", "1234567890123456789012345678901234567890"),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"private_key", "-----BEGIN PRIVATE KEY-----\n key updated \n-----END PRIVATE KEY-----\n"),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"client_email", fmt.Sprintf("%s@awesome-project-id.iam.gserviceaccount.com", client)),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"client_id", "123456789012345678901"),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"host_filters", ""),
-					resource.TestCheckResourceAttr(
-						"datadog_integration_gcp.awesome_gcp_project_integration",
-						"automute", "true"),
-				),
+				Config: fmt.Sprintf(`
+					resource "datadog_integration_gcp" "awesome_gcp_project_integration" {
+					  project_id     = "%s"
+					  private_key_id = "1234567890123456789012345678901234567890"
+					  private_key    = "-----BEGIN PRIVATE KEY-----\n key updated \n-----END PRIVATE KEY-----\n"
+					  client_email   = "%s@awesome-project-id.iam.gserviceaccount.com"
+					  client_id      = "123456789012345678901"
+					  automute       = true
+					  monitored_resource_configs = [
+						{
+						  type    = "gce_instance"
+						  filters = ["host:one"]
+						},
+					  ]
+					}`, uniq, uniq),
+				Check: resource.ComposeTestCheckFunc(checkIntegrationGCPExists(providers.frameworkProvider)),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("project_id"), knownvalue.StringExact(uniq)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("private_key_id"), knownvalue.StringExact("1234567890123456789012345678901234567890")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("private_key"), knownvalue.StringExact("-----BEGIN PRIVATE KEY-----\n key updated \n-----END PRIVATE KEY-----\n")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("client_email"), knownvalue.StringExact(fmt.Sprintf("%s@awesome-project-id.iam.gserviceaccount.com", uniq))),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("client_id"), knownvalue.StringExact("123456789012345678901")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("automute"), knownvalue.Bool(true)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("cspm_resource_collection_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("is_security_command_center_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("resource_collection_enabled"), knownvalue.Bool(true)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("is_resource_change_collection_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("host_filters"), knownvalue.StringExact("host:one")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("monitored_resource_configs"), knownvalue.SetExact([]knownvalue.Check{
+						knownvalue.ObjectExact(map[string]knownvalue.Check{
+							"type": knownvalue.StringExact("gce_instance"),
+							"filters": knownvalue.SetExact([]knownvalue.Check{
+								knownvalue.StringExact("host:one"),
+							}),
+						}),
+					})),
+				},
 			},
 		},
 	})
 }
 
-func checkIntegrationGCPExists(accProvider func() (*schema.Provider, error)) func(*terraform.State) error {
-	return func(s *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		datadogClientV1 := providerConf.DatadogClientV1
-		authV1 := providerConf.AuthV1
+func TestAccDatadogIntegrationGCP(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	uniq := uniqueEntityName(ctx, t)
 
-		integrations, _, err := datadogClientV1.GCPIntegrationApi.ListGCPIntegration(authV1)
+	cloudRunRevisionFilters := knownvalue.SetExact([]knownvalue.Check{
+		knownvalue.StringExact("rev:one"),
+		knownvalue.StringExact("rev:two"),
+	})
+	updatedCloudRunRevisionFilters := knownvalue.SetExact([]knownvalue.Check{
+		knownvalue.StringExact("rev:three"),
+	})
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             checkIntegrationGCPDestroy(providers.frameworkProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+					resource "datadog_integration_gcp" "awesome_gcp_project_integration" {
+					  project_id                 = "%s"
+					  private_key_id             = "1234567890123456789012345678901234567890"
+					  private_key                = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+					  client_email               = "%s@awesome-project-id.iam.gserviceaccount.com"
+					  client_id                  = "123456789012345678901"
+					  cloud_run_revision_filters = ["rev:one", "rev:two"]
+					  host_filters               = "host:one"
+					}`, uniq, uniq),
+				Check: resource.ComposeTestCheckFunc(checkIntegrationGCPExists(providers.frameworkProvider)),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("project_id"), knownvalue.StringExact(uniq)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("private_key_id"), knownvalue.StringExact("1234567890123456789012345678901234567890")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("private_key"), knownvalue.StringExact("-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("client_email"), knownvalue.StringExact(fmt.Sprintf("%s@awesome-project-id.iam.gserviceaccount.com", uniq))),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("client_id"), knownvalue.StringExact("123456789012345678901")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("automute"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("cspm_resource_collection_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("is_security_command_center_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("resource_collection_enabled"), knownvalue.Bool(true)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("is_resource_change_collection_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("cloud_run_revision_filters"), cloudRunRevisionFilters),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("host_filters"), knownvalue.StringExact("host:one")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("monitored_resource_configs"), knownvalue.SetExact([]knownvalue.Check{
+						knownvalue.ObjectExact(map[string]knownvalue.Check{
+							"type":    knownvalue.StringExact("cloud_run_revision"),
+							"filters": cloudRunRevisionFilters,
+						}),
+						knownvalue.ObjectExact(map[string]knownvalue.Check{
+							"type": knownvalue.StringExact("gce_instance"),
+							"filters": knownvalue.SetExact([]knownvalue.Check{
+								knownvalue.StringExact("host:one"),
+							}),
+						}),
+					})),
+				},
+			},
+			{
+				Config: fmt.Sprintf(`
+					resource "datadog_integration_gcp" "awesome_gcp_project_integration" {
+					  project_id     = "%s"
+					  private_key_id = "1234567890123456789012345678901234567890"
+					  private_key    = "-----BEGIN PRIVATE KEY-----\n key updated \n-----END PRIVATE KEY-----\n"
+					  client_email   = "%s@awesome-project-id.iam.gserviceaccount.com"
+					  client_id      = "123456789012345678901"
+					  automute       = true
+					  monitored_resource_configs = [
+						{
+						  type    = "cloud_function"
+						  filters = ["func:one", "func:two", "func:three"]
+						},
+						{
+						  type    = "cloud_run_revision"
+						  filters = ["rev:three"]
+						},
+					  ]
+					}`, uniq, uniq),
+				Check: resource.ComposeTestCheckFunc(checkIntegrationGCPExists(providers.frameworkProvider)),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("project_id"), knownvalue.StringExact(uniq)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("private_key_id"), knownvalue.StringExact("1234567890123456789012345678901234567890")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("private_key"), knownvalue.StringExact("-----BEGIN PRIVATE KEY-----\n key updated \n-----END PRIVATE KEY-----\n")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("client_email"), knownvalue.StringExact(fmt.Sprintf("%s@awesome-project-id.iam.gserviceaccount.com", uniq))),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("client_id"), knownvalue.StringExact("123456789012345678901")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("automute"), knownvalue.Bool(true)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("cspm_resource_collection_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("is_security_command_center_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("resource_collection_enabled"), knownvalue.Bool(true)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("is_resource_change_collection_enabled"), knownvalue.Bool(false)),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("cloud_run_revision_filters"), updatedCloudRunRevisionFilters),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("host_filters"), knownvalue.StringExact("")),
+					statecheck.ExpectKnownValue("datadog_integration_gcp.awesome_gcp_project_integration", tfjsonpath.New("monitored_resource_configs"), knownvalue.SetExact([]knownvalue.Check{
+						knownvalue.ObjectExact(map[string]knownvalue.Check{
+							"type": knownvalue.StringExact("cloud_function"),
+							"filters": knownvalue.SetExact([]knownvalue.Check{
+								knownvalue.StringExact("func:one"),
+								knownvalue.StringExact("func:two"),
+								knownvalue.StringExact("func:three"),
+							}),
+						}),
+						knownvalue.ObjectExact(map[string]knownvalue.Check{
+							"type":    knownvalue.StringExact("cloud_run_revision"),
+							"filters": updatedCloudRunRevisionFilters,
+						}),
+					})),
+				},
+			},
+		},
+	})
+}
+
+func checkIntegrationGCPExists(accProvider *fwprovider.FrameworkProvider) func(*terraform.State) error {
+	return func(s *terraform.State) error {
+		apiInstances := accProvider.DatadogApiInstances
+		auth := accProvider.Auth
+
+		integrations, _, err := apiInstances.GetGCPIntegrationApiV1().ListGCPIntegration(auth)
 		if err != nil {
 			return err
 		}
@@ -166,14 +233,12 @@ func checkIntegrationGCPExists(accProvider func() (*schema.Provider, error)) fun
 	}
 }
 
-func checkIntegrationGCPDestroy(accProvider func() (*schema.Provider, error)) func(*terraform.State) error {
+func checkIntegrationGCPDestroy(accProvider *fwprovider.FrameworkProvider) func(*terraform.State) error {
 	return func(s *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		datadogClientV1 := providerConf.DatadogClientV1
-		authV1 := providerConf.AuthV1
+		apiInstances := accProvider.DatadogApiInstances
+		auth := accProvider.Auth
 
-		integrations, _, err := datadogClientV1.GCPIntegrationApi.ListGCPIntegration(authV1)
+		integrations, _, err := apiInstances.GetGCPIntegrationApiV1().ListGCPIntegration(auth)
 		if err != nil {
 			return err
 		}

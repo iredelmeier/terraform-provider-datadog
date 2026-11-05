@@ -1,0 +1,1296 @@
+package fwprovider
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+	"github.com/hashicorp/go-cleanhttp"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/provider"
+	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/logging"
+	datadogCommunity "github.com/zorkian/go-datadog-api"
+
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/cloudauth"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/fwutils"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/terraformauth"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
+)
+
+var _ provider.Provider = &FrameworkProvider{}
+
+// EnableGeneratedUnstableOperations enables every unstable SDK operation used
+// by generated provider artifacts. Keeping this in the provider package lets
+// alternate client construction paths, including acceptance tests, consume the
+// generator-owned registry without duplicating operation identifiers.
+func EnableGeneratedUnstableOperations(config *datadog.Configuration) {
+	for _, operation := range generatedUnstableOperations {
+		config.SetUnstableOperationEnabled(operation, true)
+	}
+}
+
+var Resources = []func() resource.Resource{
+	NewAgentlessScanningAwsScanOptionsResource,
+	NewAgentlessScanningAzureScanOptionsResource,
+	NewAgentlessScanningGcpScanOptionsResource,
+	NewOpenapiApiResource,
+	NewAPIKeyResource,
+	NewApplicationKeyResource,
+	NewApmRetentionFilterResource,
+	NewApmRetentionFiltersOrderResource,
+	NewIntegrationAwsAccountResource,
+	NewIntegrationAwsAccountCcmConfigResource,
+	NewCatalogEntityResource,
+	NewDashboardListResource,
+	NewDatasetResource,
+	NewDomainAllowlistResource,
+	NewDowntimeScheduleResource,
+	NewFleetScheduleResource,
+	NewIntegrationAzureResource,
+	NewIntegrationAwsEventBridgeResource,
+	NewIntegrationAwsExternalIDResource,
+	NewAwsWifIdentityMappingResource,
+	NewAwsWifIntakeMappingResource,
+	NewGithubOidcIntakeMappingResource,
+	NewGithubOidcIdentityMappingResource,
+	NewIntegrationCloudflareAccountResource,
+	NewIntegrationConfluentAccountResource,
+	NewIntegrationConfluentResourceResource,
+	NewIntegrationFastlyAccountResource,
+	NewIntegrationFastlyServiceResource,
+	NewIntegrationGcpResource,
+	NewIntegrationGcpStsResource,
+	NewCloudInventorySyncConfigResource,
+	NewGovernanceControlResource,
+	NewIpAllowListResource,
+	NewMonitorNotificationRuleResource,
+	NewSecurityNotificationRuleResource,
+	NewRestrictionPolicyResource,
+	NewRumApplicationResource,
+	NewRumExclusionFilterResource,
+	NewRumMetricResource,
+	NewRumOperationResource,
+	NewRumOperationJourneyLinkResource,
+	NewRumRetentionFilterResource,
+	NewRumRetentionFiltersOrderResource,
+	NewSamlIdpMetadataResource,
+	NewRumRetentionQuotaResource,
+	NewSecurityFindingsMuteRuleResource,
+	NewSecurityFindingsMuteRulesOrderResource,
+	NewSecurityFindingsDueDateRuleResource,
+	NewSecurityFindingsDueDateRulesOrderResource,
+	NewSecurityFindingsTicketCreationRuleResource,
+	NewSecurityFindingsTicketCreationRulesOrderResource,
+	NewSecurityFindingsSeverityModifierRuleResource,
+	NewSecurityFindingsSeverityModifierRulesOrderResource,
+	NewSecurityFindingsInboxRuleResource,
+	NewSecurityFindingsInboxRulesOrderResource,
+	NewSecurityFindingsDefaultInboxRuleResource,
+	NewSensitiveDataScannerGroupOrder,
+	NewServiceAccountApplicationKeyResource,
+	NewServiceAccessTokenResource,
+	NewSpansMetricResource,
+	NewTagIndexingRuleResource,
+	NewTagIndexingRuleExemptionResource,
+	NewTagIndexingRuleOrderResource,
+	NewSyntheticsConcurrencyCapResource,
+	NewSyntheticsGlobalVariableResource,
+	NewSyntheticsPrivateLocationResource,
+	NewSyntheticsSuiteResource,
+	NewTagRuleResource,
+	NewTeamLinkResource,
+	NewTeamMembershipResource,
+	NewTeamNotificationRuleResource,
+	NewTeamPermissionSettingResource,
+	NewTeamResource,
+	NewTeamHierarchyLinksResource,
+	NewTeamConnectionResource,
+	NewTeamSyncResource,
+	NewUserRoleResource,
+	NewSecurityMonitoringSuppressionResource,
+	NewSecurityMonitoringCriticalAssetResource,
+	NewServiceAccountResource,
+	NewWebhookResource,
+	NewWebhookCustomVariableResource,
+	NewWebhookOauth2ClientCredentialsResource,
+	NewLogsCustomDestinationResource,
+	NewLogsRestrictionQueryResource,
+	NewTenantBasedHandleResource,
+	NewAppsecWafExclusionFilterResource,
+	NewAppsecWafCustomRuleResource,
+	NewWorkflowsWebhookHandleResource,
+	NewActionConnectionResource,
+	NewActionExecutionPolicyResource,
+	NewWorkflowAutomationResource,
+	NewAppBuilderAppResource,
+	NewObservabilitPipelineResource,
+	NewOnCallEscalationPolicyResource,
+	NewOnCallScheduleResource,
+	NewOnCallTeamRoutingRulesResource,
+	NewOnCallUserNotificationChannelResource,
+	NewOnCallUserNotificationRuleResource,
+	NewOrgConnectionResource,
+	NewOrgGroupResource,
+	NewOrgGroupMembershipResource,
+	NewOrgGroupPolicyResource,
+	NewOrgGroupPolicyOverrideResource,
+	NewComplianceResourceEvaluationFilter,
+	NewSecurityMonitoringDefaultRuleResource,
+	NewSecurityMonitoringFilterResource,
+	NewSecurityMonitoringRuleResource,
+	NewSecurityMonitoringRuleJSONResource,
+	NewComplianceCustomFrameworkResource,
+	NewCostBudgetResource,
+	NewCostCustomForecastResource,
+	NewTagPipelineRulesetResource,
+	NewTagPipelineRulesetsResource,
+	NewSecureEmbedDashboardResource,
+	NewCSMThreatsAgentRuleResource,
+	NewCSMThreatsPolicyResource,
+	NewAppKeyRegistrationResource,
+	NewIncidentTypeResource,
+	NewIncidentNotificationTemplateResource,
+	NewIncidentNotificationRuleResource,
+	NewIncidentPostmortemTemplateResource,
+	NewIncidentUserDefinedFieldResource,
+	NewIncidentUserDefinedRoleResource,
+	NewAwsCurConfigResource,
+	NewGcpUcConfigResource,
+	NewDatadogCustomAllocationRuleResource,
+	NewCustomAllocationRulesResource,
+	NewAzureUcConfigResource,
+	NewDeploymentGateResource,
+	NewReferenceTableResource,
+	NewDatastoreResource,
+	NewDatastoreItemResource,
+	NewStatusPageResource,
+	NewStatusPageComponentResource,
+	NewStatusPageDegradationTemplateResource,
+	NewStatusPageMaintenanceTemplateResource,
+}
+
+var Datasources = []func() datasource.DataSource{
+	NewAPIKeyDataSource,
+	NewAwsAvailableNamespacesDataSource,
+	NewAwsIntegrationAccountDataSource,
+	NewAwsIntegrationExternalIDDataSource,
+	NewAwsIntegrationIAMPermissionsDataSource,
+	NewAwsIntegrationIAMPermissionsStandardDataSource,
+	NewAwsIntegrationIAMPermissionsResourceCollectionDataSource,
+	NewAwsLogsServicesDataSource,
+	NewDatadogApmRetentionFiltersOrderDataSource,
+	NewDatadogDashboardListDataSource,
+	NewFleetScheduleDataSource,
+	NewFleetSchedulesDataSource,
+	NewDatadogIntegrationAWSNamespaceRulesDatasource,
+	NewDatadogMetricActiveTagsAndAggregationsDataSource,
+	NewDatadogMetricMetadataDataSource,
+	NewDatadogMetricTagsDataSource,
+	NewDatadogMetricsDataSource,
+	NewDatadogPowerpackDataSource,
+	NewDatadogServiceAccountDatasource,
+	NewDatadogSoftwareCatalogDataSource,
+	NewDatadogTeamDataSource,
+	NewDatadogTeamHierarchyLinksDataSource,
+	NewDatadogTeamMembershipsDataSource,
+	NewDatadogTeamNotificationRuleDataSource,
+	NewDatadogTeamNotificationRulesDataSource,
+	NewDatadogOrgGroupsDataSource,
+	NewDatadogOrgGroupMembershipsDataSource,
+	NewDatadogOrgGroupPoliciesDataSource,
+	NewDatadogOrgGroupPolicyOverridesDataSource,
+	NewHostsDataSource,
+	NewIPRangesDataSource,
+	NewRumApplicationDataSource,
+	NewRumRetentionFiltersDataSource,
+	NewSensitiveDataScannerGroupOrderDatasource,
+	NewDatadogUsersDataSource,
+	NewDatadogRoleUsersDataSource,
+	NewDatadogRolePermissionsDataSource,
+	NewSecurityMonitoringSuppressionDataSource,
+	NewSecurityMonitoringCriticalAssetDataSource,
+	NewSecurityMonitoringCriticalAssetsDataSource,
+	NewLogsPipelinesOrderDataSource,
+	NewDatadogTeamsDataSource,
+	NewDatadogActionConnectionDataSource,
+	NewDatadogSyntheticsGlobalVariableDataSource,
+	NewDatadogSyntheticsLocationsDataSource,
+	NewWorkflowAutomationDataSource,
+	NewDatadogAppBuilderAppDataSource,
+	NewCostBudgetDataSource,
+	NewCostCustomForecastDataSource,
+	NewTagPipelineRulesetDataSource,
+	NewCSMThreatsAgentRulesDataSource,
+	NewCSMThreatsPoliciesDataSource,
+	NewIncidentTypeDataSource,
+	NewIncidentNotificationTemplateDataSource,
+	NewIncidentNotificationRuleDataSource,
+	NewDatadogAwsCurConfigDataSource,
+	NewDatadogGcpUcConfigDataSource,
+	NewDatadogCustomAllocationRuleDataSource,
+	NewDatadogAzureUcConfigDataSource,
+	NewDatadogReferenceTableDataSource,
+	NewDatadogReferenceTableRowsDataSource,
+	NewOrganizationSettingsDataSource,
+	NewDatadogCurrentUserDataSource,
+	NewDatadogDatastoreDataSource,
+	NewDatastoreItemDataSource,
+	NewStatusPageDataSource,
+	NewStatusPagesDataSource,
+	NewStatusPageComponentDataSource,
+	NewStatusPageComponentsDataSource,
+	NewStatusPageDegradationTemplateDataSource,
+	NewStatusPageDegradationTemplatesDataSource,
+	NewStatusPageMaintenanceTemplateDataSource,
+	NewStatusPageMaintenanceTemplatesDataSource,
+}
+
+// FrameworkProvider struct
+type FrameworkProvider struct {
+	CommunityClient     *datadogCommunity.Client
+	DatadogApiInstances *utils.ApiInstances
+	Auth                context.Context
+
+	ConfigureCallbackFunc func(p *FrameworkProvider, request *provider.ConfigureRequest, config *ProviderSchema) diag.Diagnostics
+	Now                   func() time.Time
+	DefaultTags           map[string]string
+	IgnoreTagKeys         []string
+
+	// Captured before environment defaults so a WIT cannot override provider-block authentication.
+	hasExplicitAuth bool
+}
+
+// ProviderSchema struct
+type ProviderSchema struct {
+	ApiKey                           types.String `tfsdk:"api_key"`
+	AppKey                           types.String `tfsdk:"app_key"`
+	BearerToken                      types.String `tfsdk:"bearer_token"`
+	WorkloadIdentityTokenTag         types.String `tfsdk:"workload_identity_token_tag"`
+	ApiUrl                           types.String `tfsdk:"api_url"`
+	Validate                         types.String `tfsdk:"validate"`
+	CloudProviderType                types.String `tfsdk:"cloud_provider_type"`
+	CloudProviderRegion              types.String `tfsdk:"cloud_provider_region"`
+	OrgUuid                          types.String `tfsdk:"org_uuid"`
+	AWSAccessKeyId                   types.String `tfsdk:"aws_access_key_id"`
+	AWSSecretAccessKey               types.String `tfsdk:"aws_secret_access_key"`
+	AWSSessionToken                  types.String `tfsdk:"aws_session_token"`
+	HttpClientRetryEnabled           types.String `tfsdk:"http_client_retry_enabled"`
+	HttpClientRetryTimeout           types.Int64  `tfsdk:"http_client_retry_timeout"`
+	HttpClientRetryBackoffMultiplier types.Int64  `tfsdk:"http_client_retry_backoff_multiplier"`
+	HttpClientRetryBackoffBase       types.Int64  `tfsdk:"http_client_retry_backoff_base"`
+	HttpClientRetryMaxRetries        types.Int64  `tfsdk:"http_client_retry_max_retries"`
+	HttpClientRetryJitter            types.Int64  `tfsdk:"http_client_retry_jitter"`
+	DefaultTags                      []DefaultTag `tfsdk:"default_tags"`
+	IgnoreTagKeys                    types.Set    `tfsdk:"ignore_tag_keys"`
+}
+
+type DefaultTag struct {
+	Tags types.Map `tfsdk:"tags"`
+}
+
+func New() provider.Provider {
+	return &FrameworkProvider{
+		ConfigureCallbackFunc: defaultConfigureFunc,
+	}
+}
+
+func (p *FrameworkProvider) Resources(_ context.Context) []func() resource.Resource {
+	// Hand-written and generator-v2 resources are kept in separate slices (see
+	// generatedResources) so regenerating does not churn this file. The
+	// conditional resource below leaves room for itself in the capacity.
+	wrappedResources := make([]func() resource.Resource, 0, len(Resources)+len(generatedResources)+1)
+	for _, f := range slices.Concat(Resources, generatedResources) {
+		r := f()
+		wrappedResources = append(wrappedResources, func() resource.Resource { return NewFrameworkResourceWrapper(&r) })
+	}
+
+	if utils.UseMonitorFrameworkProvider() {
+		monitorResource := NewMonitorResource()
+		wrappedResources = append(wrappedResources, func() resource.Resource { return NewFrameworkResourceWrapper(&monitorResource) })
+	}
+
+	return wrappedResources
+}
+
+func (p *FrameworkProvider) DataSources(_ context.Context) []func() datasource.DataSource {
+	// Hand-written and generator-v2 data sources are kept in separate slices
+	// (see generatedDatasources) so regenerating does not churn this file.
+	wrappedDatasources := make([]func() datasource.DataSource, 0, len(Datasources)+len(generatedDatasources))
+	for _, f := range slices.Concat(Datasources, generatedDatasources) {
+		r := f()
+		wrappedDatasources = append(wrappedDatasources, func() datasource.DataSource { return NewFrameworkDatasourceWrapper(&r) })
+	}
+
+	return wrappedDatasources
+}
+
+func (p *FrameworkProvider) Metadata(_ context.Context, _ provider.MetadataRequest, response *provider.MetadataResponse) {
+	response.TypeName = "datadog_"
+}
+
+func (p *FrameworkProvider) MetaSchema(_ context.Context, _ provider.MetaSchemaRequest, _ *provider.MetaSchemaResponse) {
+}
+
+func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"api_key": schema.StringAttribute{
+				Optional:    true,
+				Sensitive:   true,
+				Description: "Datadog API key. Required when `validate` is true unless authentication uses AWS WIF, a bearer token, or Terraform Dynamic Provider Credentials. This can also be set via the `DD_API_KEY` environment variable.",
+			},
+			"app_key": schema.StringAttribute{
+				Optional:    true,
+				Sensitive:   true,
+				Description: "Datadog application key. Required when `validate` is true unless authentication uses AWS WIF, a bearer token, or Terraform Dynamic Provider Credentials. This can also be set via the `DD_APP_KEY` environment variable.",
+			},
+			"bearer_token": schema.StringAttribute{
+				Optional:    true,
+				Sensitive:   true,
+				Description: "Datadog credential sent in the `Authorization: Bearer <token>` header. Accepts personal access tokens (`ddpat_*`) and service-account access tokens (`ddsat_*`). When set, the provider authenticates with `Authorization: Bearer <token>` instead of the `DD-API-KEY` / `DD-APPLICATION-KEY` headers. This can also be set via the `DD_BEARER_TOKEN` or `DATADOG_BEARER_TOKEN` environment variable.",
+			},
+			"workload_identity_token_tag": schema.StringAttribute{
+				Optional:    true,
+				Description: "Selects the HCP Terraform workload identity token tag for this provider configuration, for example DATADOG_ORG_A selects TFC_WORKLOAD_IDENTITY_TOKEN_DATADOG_ORG_A. When set, that token must be present and have a valid Datadog audience; no other token or environment authentication is used as fallback. Explicit API/application keys, bearer_token, or cloud_provider_type take precedence. When unset or empty, automatically tries the DATADOG tag and then the untagged token. Tags may contain only letters, numbers, and underscores; TYPE is reserved.",
+			},
+			"api_url": schema.StringAttribute{
+				Optional:    true,
+				Description: "The API URL. This can also be set via the DD_HOST environment variable, and defaults to `https://api.datadoghq.com`. Note that this URL must not end with the `/api/` path. For example, `https://api.datadoghq.com/` is a correct value, while `https://api.datadoghq.com/api/` is not. And if you're working with \"EU\" version of Datadog, use `https://api.datadoghq.eu/`. Other Datadog region examples: `https://api.us5.datadoghq.com/`, `https://api.us3.datadoghq.com/` and `https://api.ddog-gov.com/`. See https://docs.datadoghq.com/getting_started/site/ for all available regions.",
+			},
+			"validate": schema.StringAttribute{
+				Optional:    true,
+				Description: "Enables credential validation during provider initialization. Valid values are [`true`, `false`]. Default is true. When false, initial credential validation is skipped.",
+			},
+			"cloud_provider_type": schema.StringAttribute{
+				Optional:    true,
+				Description: "Specifies the cloud provider used for cloud-provider-based authentication, enabling keyless access without API or app keys. Only [`aws`] is supported. This can also be set using the `DD_CLOUD_PROVIDER_TYPE` environment variable. This feature is in Preview. If you'd like to enable it for your organization, contact [support](https://docs.datadoghq.com/help/).",
+			},
+			"cloud_provider_region": schema.StringAttribute{
+				Optional:    true,
+				Description: "The cloud provider region specifier; used for cloud-provider-based authentication. For example, `us-east-1` for AWS. When omitted for AWS, the region is loaded from the AWS SDK default configuration chain.",
+			},
+			"org_uuid": schema.StringAttribute{
+				Optional:    true,
+				Description: "The organization UUID; required for AWS WIF. Optional for Terraform Dynamic Provider Credentials, but when configured it must match the organization UUID in the token audience. This can also be set using the `DD_ORG_UUID` environment variable. See the [Datadog API documentation](https://docs.datadoghq.com/api/v1/organizations/) for more information.",
+			},
+			"aws_access_key_id": schema.StringAttribute{
+				Optional:    true,
+				Sensitive:   true,
+				Description: "An optional explicit AWS access key ID used for cloud-provider-based authentication. This can also be set using the `AWS_ACCESS_KEY_ID` environment variable. When explicit credentials are omitted, the AWS SDK default credential chain is used.",
+			},
+			"aws_secret_access_key": schema.StringAttribute{
+				Optional:    true,
+				Sensitive:   true,
+				Description: "An optional explicit AWS secret access key used for cloud-provider-based authentication. This can also be set using the `AWS_SECRET_ACCESS_KEY` environment variable. It must be provided together with `aws_access_key_id`. Omit both fields to use the AWS SDK default credential chain.",
+			},
+			"aws_session_token": schema.StringAttribute{
+				Optional:    true,
+				Sensitive:   true,
+				Description: "An optional AWS session token used with explicit temporary credentials for cloud-provider-based authentication. This can also be set using the `AWS_SESSION_TOKEN` environment variable.",
+			},
+			"http_client_retry_enabled": schema.StringAttribute{
+				Optional:    true,
+				Description: "Enables request retries on HTTP status codes 429 and 5xx. Valid values are [`true`, `false`]. Defaults to `true`.",
+			},
+			"http_client_retry_timeout": schema.Int64Attribute{
+				Optional:    true,
+				Description: "The HTTP request retry timeout period. Defaults to 60 seconds.",
+			},
+			"http_client_retry_backoff_multiplier": schema.Int64Attribute{
+				Optional:    true,
+				Description: "The HTTP request retry back off multiplier. Defaults to 2.",
+			},
+			"http_client_retry_backoff_base": schema.Int64Attribute{
+				Optional:    true,
+				Description: "The HTTP request retry back off base. Defaults to 2.",
+			},
+			"http_client_retry_max_retries": schema.Int64Attribute{
+				Optional:    true,
+				Description: "The HTTP request maximum retry number. Defaults to 3.",
+			},
+			"http_client_retry_jitter": schema.Int64Attribute{
+				Optional:    true,
+				Description: "The maximum random delay added to each HTTP request retry. Defaults to 0 seconds.",
+			},
+			"ignore_tag_keys": schema.SetAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+				Description: "[Experimental - Monitors and Service Level Objectives only] Tag keys whose drift Terraform should ignore across all resources that support `ignore_tag_keys`. A resource's own `ignore_tag_keys` is merged with this list for that resource. Any `:value` suffix is ignored.",
+			},
+		},
+		Blocks: map[string]schema.Block{
+			"default_tags": schema.ListNestedBlock{
+				Validators: []validator.List{
+					listvalidator.SizeAtMost(1),
+				},
+				Description: "[Experimental - Action Connections, Logs Indexes, Logs Pipelines, Monitors, Security Monitoring Rules, and Service Level Objectives only] Configuration block containing settings to apply default resource tags across all resources.",
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"tags": schema.MapAttribute{
+							ElementType: types.StringType,
+							Optional:    true,
+							Description: "[Experimental - Action Connections, Logs Indexes, Logs Pipelines, Monitors, Security Monitoring Rules, and Service Level Objectives only] Resource tags to be applied by default across all resources.",
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func (p *FrameworkProvider) Configure(ctx context.Context, request provider.ConfigureRequest, response *provider.ConfigureResponse) {
+	var config ProviderSchema
+	response.Diagnostics.Append(request.Config.Get(ctx, &config)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	diags := p.ConfigureConfigDefaults(ctx, &config)
+	if diags.HasError() {
+		response.Diagnostics.Append(diags...)
+		return
+	}
+
+	response.Diagnostics.Append(p.ConfigureCallbackFunc(p, &request, &config)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Make config available for data sources and resources
+	response.DataSourceData = p
+	response.ResourceData = p
+}
+
+func (p *FrameworkProvider) ConfigureConfigDefaults(ctx context.Context, config *ProviderSchema) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	for _, attr := range []struct {
+		name  string
+		value types.String
+	}{
+		{"cloud_provider_type", config.CloudProviderType},
+		{"bearer_token", config.BearerToken},
+		{"api_key", config.ApiKey},
+		{"app_key", config.AppKey},
+	} {
+		if attr.value.IsUnknown() {
+			diags.AddError("Unknown provider authentication", attr.name+" must be known before configuring provider authentication")
+			return diags
+		}
+		if (attr.name == "cloud_provider_type" || attr.name == "bearer_token") && attr.value.ValueString() != "" {
+			break
+		}
+	}
+	p.hasExplicitAuth = config.ApiKey.ValueString() != "" || config.AppKey.ValueString() != "" ||
+		config.BearerToken.ValueString() != "" || config.CloudProviderType.ValueString() != ""
+
+	if config.ApiKey.IsNull() {
+		apiKey, err := utils.GetMultiEnvVar(utils.APIKeyEnvVars[:]...)
+		if err == nil {
+			config.ApiKey = types.StringValue(apiKey)
+		}
+	}
+
+	if config.AppKey.IsNull() {
+		appKey, err := utils.GetMultiEnvVar(utils.APPKeyEnvVars[:]...)
+		if err == nil {
+			config.AppKey = types.StringValue(appKey)
+		}
+	}
+
+	if config.BearerToken.IsNull() && !p.hasExplicitAuth {
+		bearerToken, err := utils.GetMultiEnvVar(utils.BearerTokenEnvVars...)
+		if err == nil {
+			config.BearerToken = types.StringValue(bearerToken)
+		}
+	}
+
+	if config.ApiUrl.IsNull() {
+		apiUrl, err := utils.GetMultiEnvVar(utils.APIUrlEnvVars[:]...)
+		if err == nil {
+			config.ApiUrl = types.StringValue(apiUrl)
+		}
+	}
+
+	if config.CloudProviderType.IsNull() && !p.hasExplicitAuth {
+		cloudProviderType, err := utils.GetMultiEnvVar(utils.CloudProviderTypeEnvVars...)
+		if err == nil {
+			config.CloudProviderType = types.StringValue(cloudProviderType)
+		}
+	}
+	if config.OrgUuid.IsNull() {
+		orgUUID, err := utils.GetMultiEnvVar(utils.OrgUUIDEnvVars[:]...)
+		if err == nil {
+			config.OrgUuid = types.StringValue(orgUUID)
+		}
+	}
+	if config.AWSAccessKeyId.IsNull() {
+		awsAccessKeyId, err := utils.GetMultiEnvVar(utils.AWSAccessKeyId)
+		if err == nil {
+			config.AWSAccessKeyId = types.StringValue(awsAccessKeyId)
+		}
+	}
+	if config.AWSSecretAccessKey.IsNull() {
+		awsSecretAccessKey, err := utils.GetMultiEnvVar(utils.AWSSecretAccessKey)
+		if err == nil {
+			config.AWSSecretAccessKey = types.StringValue(awsSecretAccessKey)
+		}
+	}
+	if config.AWSSessionToken.IsNull() {
+		awsSessionToken, err := utils.GetMultiEnvVar(utils.AWSSessionToken)
+		if err == nil {
+			config.AWSSessionToken = types.StringValue(awsSessionToken)
+		}
+	}
+
+	if config.HttpClientRetryEnabled.IsNull() {
+		retryEnabled, err := utils.GetMultiEnvVar(utils.DDHTTPRetryEnabled)
+		if err == nil {
+			config.HttpClientRetryEnabled = types.StringValue(retryEnabled)
+		}
+	}
+
+	if config.HttpClientRetryTimeout.IsNull() {
+		rTimeout, err := utils.GetMultiEnvVar(utils.DDHTTPRetryTimeout)
+		if err == nil {
+			v, _ := strconv.Atoi(rTimeout)
+			config.HttpClientRetryTimeout = types.Int64Value(int64(v))
+		}
+	}
+
+	if config.HttpClientRetryBackoffMultiplier.IsNull() {
+		rTimeout, err := utils.GetMultiEnvVar(utils.DDHTTPRetryBackoffMultiplier)
+		if err == nil {
+			v, _ := strconv.Atoi(rTimeout)
+			config.HttpClientRetryBackoffMultiplier = types.Int64Value(int64(v))
+		}
+	}
+
+	if config.HttpClientRetryBackoffBase.IsNull() {
+		rTimeout, err := utils.GetMultiEnvVar(utils.DDHTTPRetryBackoffBase)
+		if err == nil {
+			v, _ := strconv.Atoi(rTimeout)
+			config.HttpClientRetryBackoffBase = types.Int64Value(int64(v))
+		}
+	}
+
+	if config.HttpClientRetryMaxRetries.IsNull() {
+		rTimeout, err := utils.GetMultiEnvVar(utils.DDHTTPRetryMaxRetries)
+		if err == nil {
+			v, _ := strconv.Atoi(rTimeout)
+			config.HttpClientRetryMaxRetries = types.Int64Value(int64(v))
+		}
+	}
+
+	if config.HttpClientRetryJitter.IsNull() {
+		retryJitter, err := utils.GetMultiEnvVar(utils.DDHTTPRetryJitter)
+		if err == nil {
+			v, _ := strconv.Atoi(retryJitter)
+			config.HttpClientRetryJitter = types.Int64Value(int64(v))
+		}
+	}
+
+	// Configure defaults for booleans.
+	// Remove this once fully migrated to framework
+	if config.Validate.IsNull() {
+		config.Validate = types.StringValue("true")
+	}
+	if config.HttpClientRetryEnabled.IsNull() {
+		config.HttpClientRetryEnabled = types.StringValue("true")
+	}
+
+	// Run validations on the provider config after defaults and values from
+	// env var has been set.
+	diags.Append(p.ValidateConfigValues(ctx, config)...)
+
+	return diags
+}
+
+func (p *FrameworkProvider) ValidateConfigValues(ctx context.Context, config *ProviderSchema) diag.Diagnostics {
+	var diags diag.Diagnostics
+	// Init validators we need for purposes of config validation only
+	oneOfStringValidator := stringvalidator.OneOf("true", "false")
+	int64AtLeastValidator := int64validator.AtLeast(1)
+	int64NonNegativeValidator := int64validator.AtLeast(0)
+	int64BetweenValidator := int64validator.Between(1, 5)
+
+	if !config.Validate.IsNull() {
+		res := validator.StringResponse{}
+		oneOfStringValidator.ValidateString(ctx, validator.StringRequest{ConfigValue: config.Validate}, &res)
+		diags.Append(res.Diagnostics...)
+	}
+
+	if !config.HttpClientRetryEnabled.IsNull() {
+		res := validator.StringResponse{}
+		oneOfStringValidator.ValidateString(ctx, validator.StringRequest{ConfigValue: config.HttpClientRetryEnabled}, &res)
+		diags.Append(res.Diagnostics...)
+	}
+
+	if !config.HttpClientRetryBackoffMultiplier.IsNull() {
+		res := validator.Int64Response{}
+		int64AtLeastValidator.ValidateInt64(ctx, validator.Int64Request{ConfigValue: config.HttpClientRetryBackoffMultiplier}, &res)
+		diags.Append(res.Diagnostics...)
+	}
+
+	if !config.HttpClientRetryBackoffBase.IsNull() {
+		res := validator.Int64Response{}
+		int64AtLeastValidator.ValidateInt64(ctx, validator.Int64Request{ConfigValue: config.HttpClientRetryBackoffBase}, &res)
+		diags.Append(res.Diagnostics...)
+	}
+
+	if !config.HttpClientRetryMaxRetries.IsNull() {
+		res := validator.Int64Response{}
+		int64BetweenValidator.ValidateInt64(ctx, validator.Int64Request{ConfigValue: config.HttpClientRetryMaxRetries}, &res)
+		diags.Append(res.Diagnostics...)
+	}
+
+	if !config.HttpClientRetryJitter.IsNull() {
+		res := validator.Int64Response{}
+		int64NonNegativeValidator.ValidateInt64(ctx, validator.Int64Request{ConfigValue: config.HttpClientRetryJitter}, &res)
+		diags.Append(res.Diagnostics...)
+	}
+
+	return diags
+}
+
+// Helper method to configure the provider
+func defaultConfigureFunc(p *FrameworkProvider, request *provider.ConfigureRequest, config *ProviderSchema) diag.Diagnostics {
+	diags := diag.Diagnostics{}
+	validate, _ := strconv.ParseBool(config.Validate.ValueString())
+	httpClientRetryEnabled, _ := strconv.ParseBool(config.HttpClientRetryEnabled.ValueString())
+
+	cloudProviderType := config.CloudProviderType.ValueString()
+	cloudProviderRegion := config.CloudProviderRegion.ValueString()
+	orgUUID := config.OrgUuid.ValueString()
+	var workloadIdentityConfig *datadog.DelegatedTokenConfig
+	if !p.hasExplicitAuth {
+		if config.WorkloadIdentityTokenTag.IsUnknown() {
+			diags.AddError("Invalid Terraform workload identity configuration", "workload_identity_token_tag must be known before configuring the provider")
+			return diags
+		}
+		var err error
+		workloadIdentityConfig, err = terraformauth.GetDelegatedTokenConfig(orgUUID, config.WorkloadIdentityTokenTag.ValueString())
+		if err != nil {
+			diags.AddError("Invalid Terraform workload identity configuration", err.Error())
+			return diags
+		}
+	}
+	awsAccessKeyId := config.AWSAccessKeyId.ValueString()
+	awsSecretAccessKey := config.AWSSecretAccessKey.ValueString()
+	awsSessionToken := config.AWSSessionToken.ValueString()
+	bearerToken := config.BearerToken.ValueString()
+
+	if validate && workloadIdentityConfig == nil {
+		if cloudProviderType == "" && bearerToken == "" && (config.ApiKey.ValueString() == "" || config.AppKey.ValueString() == "") {
+			diags.AddError("credentials are required unless validate = false: configure api_key and app_key, bearer_token, AWS WIF, or Terraform Dynamic Provider Credentials", "")
+			return diags
+		} else if cloudProviderType != "" && orgUUID == "" {
+			diags.AddError("orgUUID must be set when using cloud provider auth unless validate = false", "")
+			return diags
+		}
+	}
+
+	// Initialize the community client
+	p.CommunityClient = datadogCommunity.NewClient(config.ApiKey.ValueString(), config.AppKey.ValueString())
+	if !config.ApiUrl.IsNull() && config.ApiUrl.ValueString() != "" {
+		p.CommunityClient.SetBaseUrl(config.ApiUrl.ValueString())
+	}
+	c := cleanhttp.DefaultClient()
+	p.CommunityClient.ExtraHeader["User-Agent"] = utils.GetUserAgentFramework(fmt.Sprintf(
+		"datadog-api-client-go/%s (go %s; os %s; arch %s)",
+		"go-datadog-api",
+		runtime.Version(),
+		runtime.GOOS,
+		runtime.GOARCH,
+	), request.TerraformVersion)
+	p.CommunityClient.HttpClient = c
+
+	// Initialize the official Datadog V1 API client
+	datadogHTTPClient := utils.NewHTTPClient()
+	auth := context.Background()
+	// Explicit provider authentication wins; otherwise prefer Terraform workload identity over environment credentials.
+	switch {
+	case workloadIdentityConfig != nil:
+		auth = context.WithValue(auth, datadog.ContextDelegatedToken, &datadog.DelegatedTokenCredentials{})
+	case cloudProviderType != "":
+		// Allows for delegated token authentication
+		auth = context.WithValue(
+			auth,
+			datadog.ContextDelegatedToken,
+			&datadog.DelegatedTokenCredentials{},
+		)
+		switch cloudProviderType {
+		case "aws":
+			if err := cloudauth.ValidateAWSCredentials(awsAccessKeyId, awsSecretAccessKey, awsSessionToken); err != nil {
+				diags.AddError("Unable to configure AWS delegated authentication", err.Error())
+				return diags
+			}
+			auth = context.WithValue(
+				auth,
+				datadog.ContextAWSVariables,
+				map[string]string{
+					datadog.AWSAccessKeyIdName:     awsAccessKeyId,
+					datadog.AWSSecretAccessKeyName: awsSecretAccessKey,
+					datadog.AWSSessionTokenName:    awsSessionToken,
+				},
+			)
+		default:
+			diags.AddError("cloud_provider_type must be set to a valid value unless validate = false", "")
+			return diags
+		}
+	case bearerToken != "":
+		// bearer_token takes precedence over api_key/app_key when both are set:
+		// a configured bearer token is an explicit signal to use Bearer auth.
+		auth = context.WithValue(auth, datadog.ContextAccessToken, bearerToken)
+	case config.ApiKey.ValueString() != "" || config.AppKey.ValueString() != "":
+		auth = context.WithValue(
+			auth,
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {
+					Key: config.ApiKey.ValueString(),
+				},
+				"appKeyAuth": {
+					Key: config.AppKey.ValueString(),
+				},
+			},
+		)
+	}
+	ddClientConfig := datadog.NewConfiguration()
+	ddClientConfig.UserAgent = utils.GetUserAgentFramework(ddClientConfig.UserAgent, request.TerraformVersion)
+	// The SDK debug logger does not redact ContextDelegatedToken credentials.
+	// Suppress raw HTTP dumps for WIT authentication until SDK redaction supports it.
+	ddClientConfig.Debug = logging.IsDebugOrHigher() && workloadIdentityConfig == nil
+
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateRUMOperation", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetRUMOperation", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateRUMOperation", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteRUMOperation", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateRUMOperationStrongLink", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateRUMOperationStrongLink", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteRUMOperationStrongLink", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateOpenAPI", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateOpenAPI", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetOpenAPI", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteOpenAPI", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListAWSLogsServices", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetDataset", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateDataset", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateDataset", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteDataset", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateAWSCloudAuthPersonaMapping", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetAWSCloudAuthPersonaMapping", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteAWSCloudAuthPersonaMapping", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateAWSCloudAuthIntakeMapping", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetAWSCloudAuthIntakeMapping", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteAWSCloudAuthIntakeMapping", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateGitHubCloudAuthIntakeMapping", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetGitHubCloudAuthIntakeMapping", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteGitHubCloudAuthIntakeMapping", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateGitHubCloudAuthPersonaMapping", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetGitHubCloudAuthPersonaMapping", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteGitHubCloudAuthPersonaMapping", true)
+
+	// Fleet Automation schedule reads are stable. Only mutations use Preview endpoints.
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateFleetSchedule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateFleetSchedule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteFleetSchedule", true)
+
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListIncidentUserDefinedFields", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateIncidentUserDefinedField", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetIncidentUserDefinedField", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateIncidentUserDefinedField", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteIncidentUserDefinedField", true)
+
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListIncidentUserDefinedRoles", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateIncidentUserDefinedRole", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetIncidentUserDefinedRole", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateIncidentUserDefinedRole", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteIncidentUserDefinedRole", true)
+
+	// Enable Governance Tag Rules
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateTagRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetTagRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateTagRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteTagRule", true)
+
+	// Enable Logs Restriction Queries
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateRestrictionQuery", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetRestrictionQuery", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateRestrictionQuery", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteRestrictionQuery", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.AddRoleToRestrictionQuery", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.RemoveRoleFromRestrictionQuery", true)
+
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateAWSAccountCCMConfig", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetAWSAccountCCMConfig", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateAWSAccountCCMConfig", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteAWSAccountCCMConfig", true)
+
+	// Enable Custom Forecast
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpsertCustomForecast", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetCustomForecast", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteCustomForecast", true)
+
+	// Enable Observability Pipelines
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreatePipeline", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetPipeline", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdatePipeline", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeletePipeline", true)
+
+	// Enable MonitorNotificationRule
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateMonitorNotificationRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetMonitorNotificationRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteMonitorNotificationRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateMonitorNotificationRule", true)
+
+	// Enable IncidentType
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateIncidentType", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetIncidentType", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateIncidentType", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteIncidentType", true)
+
+	// Enable IncidentNotificationTemplate
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateIncidentNotificationTemplate", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetIncidentNotificationTemplate", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateIncidentNotificationTemplate", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteIncidentNotificationTemplate", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListIncidentNotificationTemplates", true)
+
+	// Enable IncidentPostmortemTemplate
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateIncidentPostmortemTemplate", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetIncidentPostmortemTemplate", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateIncidentPostmortemTemplate", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteIncidentPostmortemTemplate", true)
+
+	// Enable OrgGroup
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateOrgGroup", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetOrgGroup", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateOrgGroup", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteOrgGroup", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListOrgGroups", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetOrgGroupMembership", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListOrgGroupMemberships", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateOrgGroupMembership", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateOrgGroupPolicy", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetOrgGroupPolicy", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateOrgGroupPolicy", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteOrgGroupPolicy", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListOrgGroupPolicies", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateOrgGroupPolicyOverride", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetOrgGroupPolicyOverride", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateOrgGroupPolicyOverride", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteOrgGroupPolicyOverride", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListOrgGroupPolicyOverrides", true)
+
+	// Enable IncidentNotificationRule
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateIncidentNotificationRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetIncidentNotificationRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateIncidentNotificationRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteIncidentNotificationRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListIncidentNotificationRules", true)
+
+	// Enable AWS CUR Config
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateCostAWSCURConfig", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListCostAWSCURConfigs", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateCostAWSCURConfig", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteCostAWSCURConfig", true)
+
+	// Enable Deployment Gates & Rules
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateDeploymentGate", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateDeploymentGate", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteDeploymentGate", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetDeploymentGate", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateDeploymentRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateDeploymentRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteDeploymentRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetDeploymentRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetDeploymentGateRules", true)
+
+	// Security findings automation rules
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListSecurityFindingsAutomationMuteRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateSecurityFindingsAutomationMuteRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetSecurityFindingsAutomationMuteRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateSecurityFindingsAutomationMuteRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteSecurityFindingsAutomationMuteRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ReorderSecurityFindingsAutomationMuteRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListSecurityFindingsAutomationDueDateRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateSecurityFindingsAutomationDueDateRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetSecurityFindingsAutomationDueDateRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateSecurityFindingsAutomationDueDateRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteSecurityFindingsAutomationDueDateRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ReorderSecurityFindingsAutomationDueDateRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListSecurityFindingsAutomationTicketCreationRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateSecurityFindingsAutomationTicketCreationRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetSecurityFindingsAutomationTicketCreationRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateSecurityFindingsAutomationTicketCreationRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteSecurityFindingsAutomationTicketCreationRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ReorderSecurityFindingsAutomationTicketCreationRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListSecurityFindingsAutomationSeverityModifierRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateSecurityFindingsAutomationSeverityModifierRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetSecurityFindingsAutomationSeverityModifierRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateSecurityFindingsAutomationSeverityModifierRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteSecurityFindingsAutomationSeverityModifierRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ReorderSecurityFindingsAutomationSeverityModifierRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListSecurityFindingsAutomationInboxRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateSecurityFindingsAutomationInboxRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetSecurityFindingsAutomationInboxRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateSecurityFindingsAutomationInboxRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteSecurityFindingsAutomationInboxRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ReorderSecurityFindingsAutomationInboxRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListSecurityFindingsAutomationDefaultInboxRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetSecurityFindingsAutomationDefaultInboxRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.EnableSecurityFindingsAutomationDefaultInboxRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DisableSecurityFindingsAutomationDefaultInboxRule", true)
+
+	// Enable Tag Indexing Rules & Exemptions
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateTagIndexingRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetTagIndexingRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateTagIndexingRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteTagIndexingRule", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListTagIndexingRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ReorderTagIndexingRules", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateTagIndexingRuleExemption", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetTagIndexingRuleExemption", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteTagIndexingRuleExemption", true)
+
+	// Enable Governance Controls
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetGovernanceControl", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateGovernanceControl", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetGovernanceControlNotificationSettings", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateGovernanceControlNotificationSettings", true)
+
+	// Enable Execution Policies
+	ddClientConfig.SetUnstableOperationEnabled("v2.CreateExecutionPolicy", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.GetExecutionPolicy", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateExecutionPolicy", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.DeleteExecutionPolicy", true)
+	ddClientConfig.SetUnstableOperationEnabled("v2.ListExecutionPolicies", true)
+
+	EnableGeneratedUnstableOperations(ddClientConfig)
+
+	if !config.ApiUrl.IsNull() && config.ApiUrl.ValueString() != "" {
+		parsedAPIURL, parseErr := url.Parse(config.ApiUrl.ValueString())
+		if parseErr != nil {
+			diags.AddError("invalid API URL", parseErr.Error())
+			return diags
+		}
+		if parsedAPIURL.Host == "" || parsedAPIURL.Scheme == "" {
+			diags.AddError("invalid API URL", fmt.Sprintf("API URL '%s' missing protocol or host", config.ApiUrl.ValueString()))
+			return diags
+		}
+		// If api url is passed, set and use the api name and protocol on ServerIndex{1}
+		auth = context.WithValue(auth, datadog.ContextServerIndex, 1)
+		auth = context.WithValue(auth, datadog.ContextServerVariables, map[string]string{
+			"name":     parsedAPIURL.Host,
+			"protocol": parsedAPIURL.Scheme,
+		})
+
+		// Configure URL's per operation
+		// IPRangesApiService.GetIPRanges
+		ipRangesDNSNameArr := strings.Split(parsedAPIURL.Hostname(), ".")
+		// Parse out subdomain if it exists
+		if len(ipRangesDNSNameArr) > 2 {
+			ipRangesDNSNameArr = ipRangesDNSNameArr[1:]
+		}
+		ipRangesDNSNameArr = append([]string{utils.BaseIPRangesSubdomain}, ipRangesDNSNameArr...)
+
+		auth = context.WithValue(auth, datadog.ContextOperationServerIndices, map[string]int{
+			"v1.IPRangesApi.GetIPRanges": 1,
+		})
+		auth = context.WithValue(auth, datadog.ContextOperationServerVariables, map[string]map[string]string{
+			"v1.IPRangesApi.GetIPRanges": {
+				"name": strings.Join(ipRangesDNSNameArr, "."),
+			},
+		})
+	}
+
+	if httpClientRetryEnabled {
+		ddClientConfig.RetryConfiguration.EnableRetry = httpClientRetryEnabled
+
+		if !config.HttpClientRetryTimeout.IsNull() {
+			timeout := time.Duration(config.HttpClientRetryTimeout.ValueInt64()) * time.Second
+			ddClientConfig.RetryConfiguration.HTTPRetryTimeout = timeout
+		}
+
+		if !config.HttpClientRetryBackoffMultiplier.IsNull() {
+			ddClientConfig.RetryConfiguration.BackOffMultiplier = float64(config.HttpClientRetryBackoffMultiplier.ValueInt64())
+		}
+
+		if !config.HttpClientRetryBackoffBase.IsNull() {
+			ddClientConfig.RetryConfiguration.BackOffBase = float64(config.HttpClientRetryBackoffBase.ValueInt64())
+		}
+
+		if !config.HttpClientRetryMaxRetries.IsNull() {
+			ddClientConfig.RetryConfiguration.MaxRetries = int(config.HttpClientRetryMaxRetries.ValueInt64())
+		}
+
+		if !config.HttpClientRetryJitter.IsNull() {
+			ddClientConfig.RetryConfiguration.RetryJitter = time.Duration(config.HttpClientRetryJitter.ValueInt64()) * time.Second
+		}
+	}
+
+	ddClientConfig.HTTPClient = datadogHTTPClient
+	if workloadIdentityConfig != nil {
+		ddClientConfig.DelegatedTokenConfig = workloadIdentityConfig
+	} else if cloudProviderType != "" {
+		switch cloudProviderType {
+		case "aws":
+			provider, err := cloudauth.NewAWSProvider(cloudauth.AWSConfig{
+				Region:     cloudProviderRegion,
+				HTTPClient: datadogHTTPClient,
+			})
+			if err != nil {
+				diags.AddError("Unable to configure AWS delegated authentication", err.Error())
+				return diags
+			}
+			ddClientConfig.DelegatedTokenConfig = &datadog.DelegatedTokenConfig{
+				OrgUUID:      orgUUID,
+				ProviderAuth: provider,
+				Provider:     datadog.ProviderAWS,
+			}
+		}
+	}
+	datadogClient := datadog.NewAPIClient(ddClientConfig)
+
+	p.DatadogApiInstances = &utils.ApiInstances{HttpClient: datadogClient}
+	p.Auth = auth
+
+	var defaultTags map[string]string
+	if len(config.DefaultTags) > 0 && !config.DefaultTags[0].Tags.IsNull() {
+		tagBlock := config.DefaultTags[0]
+		diags.Append(tagBlock.Tags.ElementsAs(auth, &defaultTags, false)...)
+	}
+	p.DefaultTags = defaultTags
+
+	var ignoreTagKeys []string
+	if !config.IgnoreTagKeys.IsNull() && !config.IgnoreTagKeys.IsUnknown() {
+		diags.Append(config.IgnoreTagKeys.ElementsAs(auth, &ignoreTagKeys, false)...)
+	}
+	p.IgnoreTagKeys = ignoreTagKeys
+	/*  Commented out due to duplicate validation in SDK provider - remove after Framework migration is complete.
+	if validate {
+		log.Println("[INFO] Datadog client successfully initialized, now validating...")
+		if cloudProviderType != "" { // Validate the cloud auth credentials
+			delegatedConfig, err := datadogClient.GetDelegatedToken(auth)
+			if err != nil {
+				diags.AddError("[ERROR] Datadog Client validation error: %v", err.Error())
+				return diags
+			}
+			if delegatedConfig.DelegatedToken == "" {
+				msg := fmt.Sprintf(`Invalid or missing credentials provided to the Datadog Provider. Please confirm your OrgUUID is correct and your cloud auth credentials for "%s" are valid and are for the correct region, see https://www.terraform.io/docs/providers/datadog/ for more information on providing credentials for the Datadog Provider`, cloudProviderType)
+				err := errors.New(msg)
+				diags.AddError("[ERROR] Datadog Client validation error: %v", err.Error())
+				return diags
+			}
+		} else { // Validate the API and APP keys
+			resp, _, err := p.DatadogApiInstances.GetAuthenticationApiV1().Validate(auth)
+			if err != nil {
+				diags.AddError("[ERROR] Datadog Client validation error", err.Error())
+				return diags
+			}
+			valid, ok := resp.GetValidOk()
+			if (ok && !*valid) || !ok {
+				err := errors.New(`Invalid or missing credentials provided to the Datadog Provider. Please confirm your API and APP keys are valid and are for the correct region, see https://www.terraform.io/docs/providers/datadog/ for more information on providing credentials for the Datadog Provider`)
+				diags.AddError("[ERROR] Datadog Client validation error", err.Error())
+				return diags
+			}
+		}
+	} else {
+		log.Println("[INFO] Skipping key validation (validate = false)")
+	}
+	log.Printf("[INFO] Datadog Client successfully validated.")
+	*/
+	return nil
+}
+
+var (
+	_ resource.ResourceWithConfigure        = &FrameworkResourceWrapper{}
+	_ resource.ResourceWithImportState      = &FrameworkResourceWrapper{}
+	_ resource.ResourceWithConfigValidators = &FrameworkResourceWrapper{}
+	_ resource.ResourceWithModifyPlan       = &FrameworkResourceWrapper{}
+	_ resource.ResourceWithUpgradeState     = &FrameworkResourceWrapper{}
+	_ resource.ResourceWithValidateConfig   = &FrameworkResourceWrapper{}
+)
+
+func NewFrameworkResourceWrapper(i *resource.Resource) resource.Resource {
+	return &FrameworkResourceWrapper{
+		innerResource: i,
+	}
+}
+
+type FrameworkResourceWrapper struct {
+	innerResource *resource.Resource
+	typeName      string
+}
+
+func (r *FrameworkResourceWrapper) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	rCasted, ok := (*r.innerResource).(resource.ResourceWithConfigure)
+	if ok {
+		if req.ProviderData == nil {
+			return
+		}
+		fp, ok := req.ProviderData.(*FrameworkProvider)
+		if !ok {
+			resp.Diagnostics.AddError("Unexpected Resource Configure Type", "")
+			return
+		}
+
+		// Annotate the auth context with the resource type name.
+		if r.typeName != "" {
+			annotatedFP := *fp
+			annotatedFP.Auth = utils.WithTerraformResource(fp.Auth, r.typeName)
+			req.ProviderData = &annotatedFP
+		}
+
+		rCasted.Configure(ctx, req, resp)
+	}
+}
+
+func (r *FrameworkResourceWrapper) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	(*r.innerResource).Metadata(ctx, req, resp)
+	resp.TypeName = req.ProviderTypeName + resp.TypeName
+	r.typeName = resp.TypeName
+}
+
+func (r *FrameworkResourceWrapper) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
+	(*r.innerResource).Schema(ctx, req, resp)
+	fwutils.EnrichFrameworkResourceSchema(&resp.Schema)
+}
+
+func (r *FrameworkResourceWrapper) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	(*r.innerResource).Create(ctx, req, resp)
+}
+
+func (r *FrameworkResourceWrapper) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	(*r.innerResource).Read(ctx, req, resp)
+}
+
+func (r *FrameworkResourceWrapper) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	(*r.innerResource).Update(ctx, req, resp)
+}
+
+func (r *FrameworkResourceWrapper) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	(*r.innerResource).Delete(ctx, req, resp)
+}
+
+func (r *FrameworkResourceWrapper) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	if rCasted, ok := (*r.innerResource).(resource.ResourceWithImportState); ok {
+		if req.ID == "" {
+			resp.Diagnostics.AddError("resource ID is required for import and cannot be empty", "")
+			return
+		}
+		rCasted.ImportState(ctx, req, resp)
+		return
+	}
+
+	resp.Diagnostics.AddError(
+		"Resource Import Not Implemented",
+		"This resource does not support import. Please contact the provider developer for additional information.",
+	)
+}
+
+func (r *FrameworkResourceWrapper) ConfigValidators(ctx context.Context) []resource.ConfigValidator {
+	if rCasted, ok := (*r.innerResource).(resource.ResourceWithConfigValidators); ok {
+		return rCasted.ConfigValidators(ctx)
+	}
+	return nil
+}
+
+func (r *FrameworkResourceWrapper) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if v, ok := (*r.innerResource).(resource.ResourceWithModifyPlan); ok {
+		// If the plan is null, no need to modify the plan
+		// Plan is null in case destroy planning
+		if req.Plan.Raw.IsNull() {
+			return
+		}
+		v.ModifyPlan(ctx, req, resp)
+	}
+}
+
+func (r *FrameworkResourceWrapper) UpgradeState(ctx context.Context) map[int64]resource.StateUpgrader {
+	if v, ok := (*r.innerResource).(resource.ResourceWithUpgradeState); ok {
+		return v.UpgradeState(ctx)
+	}
+	return nil
+}
+
+func (r *FrameworkResourceWrapper) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	if v, ok := (*r.innerResource).(resource.ResourceWithValidateConfig); ok {
+		v.ValidateConfig(ctx, req, resp)
+	}
+}
+
+var (
+	_ datasource.DataSourceWithConfigure        = &FrameworkDatasourceWrapper{}
+	_ datasource.DataSourceWithConfigValidators = &FrameworkDatasourceWrapper{}
+	_ datasource.DataSourceWithValidateConfig   = &FrameworkDatasourceWrapper{}
+	_ datasource.DataSource                     = &FrameworkDatasourceWrapper{}
+)
+
+func NewFrameworkDatasourceWrapper(i *datasource.DataSource) datasource.DataSource {
+	return &FrameworkDatasourceWrapper{
+		innerDatasource: i,
+	}
+}
+
+type FrameworkDatasourceWrapper struct {
+	innerDatasource *datasource.DataSource
+}
+
+func (r *FrameworkDatasourceWrapper) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	rCasted, ok := (*r.innerDatasource).(datasource.DataSourceWithConfigure)
+	if ok {
+		if req.ProviderData == nil {
+			return
+		}
+		_, ok := req.ProviderData.(*FrameworkProvider)
+		if !ok {
+			resp.Diagnostics.AddError("Unexpected Data Source Configure Type", "")
+			return
+		}
+
+		rCasted.Configure(ctx, req, resp)
+	}
+}
+
+func (r *FrameworkDatasourceWrapper) ValidateConfig(ctx context.Context, req datasource.ValidateConfigRequest, resp *datasource.ValidateConfigResponse) {
+	if rCasted, ok := (*r.innerDatasource).(datasource.DataSourceWithValidateConfig); ok {
+		rCasted.ValidateConfig(ctx, req, resp)
+	}
+}
+
+func (r *FrameworkDatasourceWrapper) ConfigValidators(ctx context.Context) []datasource.ConfigValidator {
+	if rCasted, ok := (*r.innerDatasource).(datasource.DataSourceWithConfigValidators); ok {
+		return rCasted.ConfigValidators(ctx)
+	}
+	return nil
+}
+
+func (r *FrameworkDatasourceWrapper) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	(*r.innerDatasource).Metadata(ctx, req, resp)
+	resp.TypeName = req.ProviderTypeName + resp.TypeName
+}
+
+func (r *FrameworkDatasourceWrapper) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	(*r.innerDatasource).Schema(ctx, req, resp)
+	fwutils.EnrichFrameworkDatasourceSchema(&resp.Schema)
+}
+
+func (r *FrameworkDatasourceWrapper) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	(*r.innerDatasource).Read(ctx, req, resp)
+}

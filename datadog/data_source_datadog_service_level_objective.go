@@ -2,8 +2,9 @@ package datadog
 
 import (
 	"context"
+	"sort"
 
-	"github.com/DataDog/datadog-api-client-go/api/v1/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
@@ -14,49 +15,100 @@ func dataSourceDatadogServiceLevelObjective() *schema.Resource {
 	return &schema.Resource{
 		Description: "Use this data source to retrieve information about an existing SLO for use in other resources.",
 		ReadContext: dataSourceDatadogServiceLevelObjectiveRead,
-		Schema: map[string]*schema.Schema{
-			"id": {
-				Description: "A SLO ID to limit the search.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
-			"name_query": {
-				Description: "Filter results based on SLO names.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
-			"tags_query": {
-				Description: "Filter results based on a single SLO tag.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
-			"metrics_query": {
-				Description: "Filter results based on SLO numerator and denominator.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
 
-			// Computed values
-			"name": {
-				Description: "Name of the Datadog service level objective",
-				Type:        schema.TypeString,
-				Computed:    true,
-			},
-			"type": {
-				Description: "The type of the service level objective. The mapping from these types to the types found in the Datadog Web UI can be found in the Datadog API [documentation page](https://docs.datadoghq.com/api/v1/service-level-objectives/#create-a-slo-object). Available values are: `metric` and `monitor`.",
-				Type:        schema.TypeString,
-				Computed:    true,
-			},
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"id": {
+					Description: "A SLO ID to limit the search.",
+					Type:        schema.TypeString,
+					Optional:    true,
+				},
+				"name_query": {
+					Description: "Filter results based on SLO names.",
+					Type:        schema.TypeString,
+					Optional:    true,
+				},
+				"tags_query": {
+					Description: "Filter results based on a single SLO tag.",
+					Type:        schema.TypeString,
+					Optional:    true,
+				},
+				"metrics_query": {
+					Description: "Filter results based on SLO numerator and denominator.",
+					Type:        schema.TypeString,
+					Optional:    true,
+				},
+
+				// Computed values
+				"name": {
+					Description: "Name of the Datadog service level objective",
+					Type:        schema.TypeString,
+					Computed:    true,
+				},
+				"type": {
+					Description: "The type of the service level objective. The mapping from these types to the types found in the Datadog Web UI can be found in the Datadog API [documentation page](https://docs.datadoghq.com/api/v1/service-level-objectives/#create-a-slo-object). Available values are: `metric` and `monitor`.",
+					Type:        schema.TypeString,
+					Computed:    true,
+				},
+				"description": {
+					Description: "The description of the service level objective.",
+					Type:        schema.TypeString,
+					Computed:    true,
+				},
+				"target_threshold": {
+					Description: "The primary target threshold of the service level objective.",
+					Type:        schema.TypeFloat,
+					Computed:    true,
+				},
+				"warning_threshold": {
+					Description: "The primary warning threshold of the service level objective.",
+					Type:        schema.TypeFloat,
+					Computed:    true,
+				},
+				"timeframe": {
+					Description: "The primary timeframe of the service level objective.",
+					Type:        schema.TypeString,
+					Computed:    true,
+				},
+				"query": {
+					Type:        schema.TypeList,
+					Computed:    true,
+					Description: "The metric query of good / total events",
+					Elem: &schema.Resource{
+						Schema: map[string]*schema.Schema{
+							"numerator": {
+								Description: "The sum of all the `good` events.",
+								Type:        schema.TypeString,
+								Computed:    true,
+							},
+							"denominator": {
+								Description: "The sum of the `total` events.",
+								Type:        schema.TypeString,
+								Computed:    true,
+							},
+						},
+					},
+				},
+				"tags": {
+					Description: "List of tags associated with the service level objective.",
+					// we use TypeSet to represent tags, paradoxically to be able to maintain them ordered;
+					// we order them explicitly in the read/create/update methods of this resource and using
+					// TypeSet makes Terraform ignore differences in order when creating a plan
+					Type:     schema.TypeSet,
+					Computed: true,
+					Elem:     &schema.Schema{Type: schema.TypeString},
+				},
+			}
 		},
 	}
 }
 
 func dataSourceDatadogServiceLevelObjectiveRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV1 := providerConf.DatadogClientV1
-	authV1 := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
-	reqParams := datadog.NewListSLOsOptionalParameters()
+	reqParams := datadogV1.NewListSLOsOptionalParameters()
 	if v, ok := d.GetOk("id"); ok {
 		reqParams.WithIds(v.(string))
 	}
@@ -70,12 +122,9 @@ func dataSourceDatadogServiceLevelObjectiveRead(ctx context.Context, d *schema.R
 		reqParams.WithMetricsQuery(v.(string))
 	}
 
-	slosResp, httpresp, err := datadogClientV1.ServiceLevelObjectivesApi.ListSLOs(authV1, *reqParams)
+	slosResp, httpresp, err := apiInstances.GetServiceLevelObjectivesApiV1().ListSLOs(auth, *reqParams)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpresp, "error querying service level objectives")
-	}
-	if err := utils.CheckForUnparsed(slosResp); err != nil {
-		return diag.FromErr(err)
 	}
 	if len(slosResp.GetData()) > 1 {
 		return diag.Errorf("your query returned more than one result, please try a more specific search criteria")
@@ -83,14 +132,43 @@ func dataSourceDatadogServiceLevelObjectiveRead(ctx context.Context, d *schema.R
 	if len(slosResp.GetData()) == 0 {
 		return diag.Errorf("your query returned no result, please try a less specific search criteria")
 	}
+	if err := utils.CheckForUnparsed(slosResp); err != nil {
+		return diag.FromErr(err)
+	}
 
 	slo := slosResp.GetData()[0]
+
+	var tags []string
+	tags = append(tags, slo.GetTags()...)
+	sort.Strings(tags)
 
 	d.SetId(slo.GetId())
 	if err := d.Set("name", slo.GetName()); err != nil {
 		return diag.FromErr(err)
 	}
 	if err := d.Set("type", slo.GetType()); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("description", slo.GetDescription()); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("target_threshold", slo.GetTargetThreshold()); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("warning_threshold", slo.GetWarningThreshold()); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("timeframe", slo.GetTimeframe()); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("tags", tags); err != nil {
+		return diag.FromErr(err)
+	}
+	query := make(map[string]interface{})
+	sloQ := slo.GetQuery()
+	query["numerator"] = sloQ.GetNumerator()
+	query["denominator"] = sloQ.GetDenominator()
+	if err := d.Set("query", []map[string]interface{}{query}); err != nil {
 		return diag.FromErr(err)
 	}
 

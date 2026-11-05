@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestDatadogMonitor_import(t *testing.T) {
@@ -105,10 +105,9 @@ resource "datadog_monitor" "foo" {
   renotify_statuses = ["alert", "warn"]
 
   notify_audit = false
-  timeout_h = 60
+  timeout_h = 10
   include_tags = true
   require_full_window = true
-  locked = false
   tags = ["foo:bar", "bar:baz"]
 }`, uniq)
 }
@@ -136,10 +135,9 @@ resource "datadog_monitor" "foo" {
   renotify_statuses = ["alert", "warn"]
 
   notify_audit = false
-  timeout_h = 60
+  timeout_h = 10
   include_tags = true
   require_full_window = true
-  locked = false
   tags = ["foo:bar", "bar:baz"]
 }`, uniq)
 }
@@ -170,10 +168,9 @@ resource "datadog_monitor" "foo" {
   renotify_statuses = ["alert", "warn"]
 
   notify_audit = false
-  timeout_h = 60
+  timeout_h = 10
   include_tags = true
   require_full_window = true
-  locked = false
   tags = ["foo:bar", "bar:baz"]
 }`, uniq)
 }

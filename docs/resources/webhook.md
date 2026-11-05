@@ -29,22 +29,24 @@ resource "datadog_webhook" "foo" {
 
 ### Required
 
-- **name** (String) The name of the webhook. It corresponds with `<WEBHOOK_NAME>`.
-- **url** (String) The URL of the webhook.
+- `name` (String) The name of the webhook. It corresponds with `<WEBHOOK_NAME>`.
+- `url` (String) The URL of the webhook.
 
 ### Optional
 
-- **custom_headers** (String) The headers attached to the webhook.
-- **encode_as** (String) Encoding type. Valid values are `json`, `form`.
-- **payload** (String) The payload of the webhook.
+- `custom_headers` (String) The headers attached to the webhook.
+- `encode_as` (String) Encoding type. Valid values are `json`, `form`.
+- `payload` (String) The payload of the webhook.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 terraform import datadog_webhook.foo example-webhook

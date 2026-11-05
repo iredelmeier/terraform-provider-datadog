@@ -1,0 +1,106 @@
+package test
+
+import (
+	"context"
+	"fmt"
+	"regexp"
+	"strconv"
+	"testing"
+
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/fwprovider"
+)
+
+func logsArchiveOrderCount(state *terraform.State, responseCount int) error {
+	resourceAttributes := state.RootModule().Resources["data.datadog_logs_archives_order.order"].Primary.Attributes
+	logsArchiveCount, _ := strconv.Atoi(resourceAttributes["archive_ids.#"])
+
+	if logsArchiveCount != responseCount {
+		return fmt.Errorf("expected %d logs archives in order, got %d logs archives",
+			responseCount, logsArchiveCount)
+	}
+	return nil
+}
+
+func logsArchiveOrderCheckCountV2(accProvider *fwprovider.FrameworkProvider) func(state *terraform.State) error {
+	return func(state *terraform.State) error {
+		apiInstances := accProvider.DatadogApiInstances
+		auth := accProvider.Auth
+
+		logsArchiveOrder, _, err := apiInstances.GetLogsArchivesApiV2().GetLogsArchiveOrder(auth)
+		if err != nil {
+			return err
+		}
+		return logsArchiveOrderCount(state, len(logsArchiveOrder.Data.Attributes.ArchiveIds))
+	}
+}
+
+func TestAccDatadogLogsArchivesOrderDatasource(t *testing.T) {
+	t.Skip("This test doesn't support recording or replaying")
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	uniq := uniqueAWSAccountID(ctx, t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: `data "datadog_logs_archives_order" "order" {}`,
+				Check:  resource.TestMatchResourceAttr("data.datadog_logs_archives_order.order", "archive_ids.#", regexp.MustCompile("[^0].*$")),
+			},
+			{
+				Config: testAccDatasourceDatadogLogsArchiveOrderWithArchive(uniq),
+				Check: resource.ComposeTestCheckFunc(
+					logsArchiveOrderCheckCountV2(providers.frameworkProvider),
+				),
+			},
+		},
+	})
+}
+
+func testAccDatasourceDatadogLogsArchiveOrderWithArchive(uniq string) string {
+	return fmt.Sprintf(`
+data "datadog_logs_archives_order" "order" {
+	depends_on = ["datadog_logs_archive.sample_archive"]
+}
+
+resource "datadog_integration_aws_account" "account" {
+	aws_account_id = "%[1]s"
+	aws_partition  = "aws"
+	aws_regions {}
+	auth_config {
+		aws_auth_config_role {
+			role_name = "testacc-datadog-integration-role"
+		}
+	}
+	logs_config {
+		lambda_forwarder {}
+	}
+	metrics_config {
+		namespace_filters {}
+	}
+	resources_config {}
+	traces_config {
+		xray_services {}
+	}
+}
+
+resource "datadog_logs_archive" "sample_archive" {
+	depends_on = ["datadog_integration_aws_account.account"]
+	name = "my first s3 archive"
+	query = "service:tutu"
+	s3_archive {
+		bucket 		 = "my-bucket"
+		path 		 = "/path/foo"
+		account_id   = datadog_integration_aws_account.account.aws_account_id
+		role_name    = "testacc-datadog-integration-role"
+	}
+	rehydration_tags = ["team:intake", "team:app"]
+	include_tags = true
+	rehydration_max_scan_size_in_gb = 123
+}
+`, uniq)
+}

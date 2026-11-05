@@ -13,8 +13,8 @@ Use this data source to retrieve information about an existing role for use in o
 ## Example Usage
 
 ```terraform
-data "datadog_role" "test" {
-  filter = "Datadog Standard Role"
+data "datadog_role" "api_key_manager" {
+  filter = "API Key Manager"
 }
 ```
 
@@ -23,12 +23,10 @@ data "datadog_role" "test" {
 
 ### Required
 
-- **filter** (String) A string on which to filter the roles.
+- `filter` (String) A string on which to filter the roles.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
-- **name** (String) Name of the role.
-- **user_count** (Number) Number of users assigned to this role.
-
-
+- `id` (String) The ID of this resource.
+- `name` (String) Name of the role.
+- `user_count` (Number) Number of users assigned to this role.

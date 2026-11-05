@@ -1,0 +1,211 @@
+package fwprovider
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+)
+
+var _ datasource.DataSource = &actionConnectionDatasource{}
+
+type actionConnectionDatasource struct {
+	Api  *datadogV2.ActionConnectionApi
+	Auth context.Context
+}
+
+func NewDatadogActionConnectionDataSource() datasource.DataSource {
+	return &actionConnectionDatasource{}
+}
+
+func (d *actionConnectionDatasource) Configure(_ context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	providerData := request.ProviderData.(*FrameworkProvider)
+	d.Api = providerData.DatadogApiInstances.GetActionConnectionApiV2()
+	d.Auth = providerData.Auth
+}
+
+func (d *actionConnectionDatasource) Metadata(_ context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = "action_connection"
+}
+
+func (d *actionConnectionDatasource) Schema(_ context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Description: "A connection that can be used in Actions, including in the Workflow Automation and App Builder products. This data source requires a [registered application key](https://registry.terraform.io/providers/DataDog/datadog/latest/docs/resources/app_key_registration).",
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Description: "ID for Connection.",
+				Required:    true,
+			},
+			"name": schema.StringAttribute{
+				Computed:    true,
+				Description: "Name of the connection",
+			},
+			"tags": schema.SetAttribute{
+				Computed:    true,
+				Description: "Tags associated with the connection.",
+				ElementType: types.StringType,
+			},
+		},
+		Blocks: map[string]schema.Block{
+			"aws": schema.SingleNestedBlock{
+				Description: "Configuration for an AWS connection",
+				Blocks: map[string]schema.Block{
+					"assume_role": schema.SingleNestedBlock{
+						Description: "Configuration for an assume role AWS connection",
+						Attributes: map[string]schema.Attribute{
+							"external_id": schema.StringAttribute{
+								Description: "External ID that specifies which connection can be used to assume the role",
+								Computed:    true,
+							},
+							"principal_id": schema.StringAttribute{
+								Description: "AWS account that will assume the role",
+								Computed:    true,
+							},
+							"account_id": schema.StringAttribute{
+								Description: "AWS account that the connection is created for",
+								Computed:    true,
+							},
+							"role": schema.StringAttribute{
+								Description: "Role to assume",
+								Computed:    true,
+							},
+						},
+					},
+				},
+			},
+			"http": schema.SingleNestedBlock{
+				Description: "Configuration for an HTTP connection",
+				Attributes: map[string]schema.Attribute{
+					"base_url": schema.StringAttribute{
+						Description: "Base HTTP url for the integration",
+						Computed:    true,
+					},
+				},
+				Blocks: map[string]schema.Block{
+					"token_auth": schema.SingleNestedBlock{
+						Description: "Configuration for an HTTP connection that uses token auth",
+						Blocks: map[string]schema.Block{
+							"token": schema.ListNestedBlock{
+								Description: "Token for HTTP authentication",
+								NestedObject: schema.NestedBlockObject{
+									Attributes: map[string]schema.Attribute{
+										"type": schema.StringAttribute{
+											Description: "Token type",
+											Computed:    true,
+										},
+										"name": schema.StringAttribute{
+											Description: "Token name",
+											Computed:    true,
+										},
+										"value": schema.StringAttribute{
+											Description: "Token value",
+											Computed:    true,
+											Sensitive:   true,
+										},
+									},
+								},
+							},
+							"header": schema.ListNestedBlock{
+								Description: "Header for HTTP authentication",
+								NestedObject: schema.NestedBlockObject{
+									Attributes: map[string]schema.Attribute{
+										"name": schema.StringAttribute{
+											Description: "Header name",
+											Computed:    true,
+										},
+										"value": schema.StringAttribute{
+											Description: "",
+											Computed:    true,
+										},
+									},
+								},
+							},
+							"url_parameter": schema.ListNestedBlock{
+								Description: "URL parameter for HTTP authentication",
+								NestedObject: schema.NestedBlockObject{
+									Attributes: map[string]schema.Attribute{
+										"name": schema.StringAttribute{
+											Description: "URL parameter name",
+											Computed:    true,
+										},
+										"value": schema.StringAttribute{
+											Description: "URL parameter value",
+											Computed:    true,
+										},
+									},
+								},
+							},
+							"body": schema.SingleNestedBlock{
+								Description: "Body for HTTP authentication",
+								Attributes: map[string]schema.Attribute{
+									"content_type": schema.StringAttribute{
+										Description: "Content type of the body",
+										Computed:    true,
+									},
+									"content": schema.StringAttribute{
+										Description: "Serialized body content",
+										Computed:    true,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, integrationSpec := range additionalActionConnectionSpecs {
+		response.Schema.Blocks[integrationSpec.Name] = actionConnectionDataSourceBlock(integrationSpec)
+	}
+}
+
+func actionConnectionDataSourceBlock(integrationSpec actionConnectionIntegrationSpec) schema.Block {
+	credentialBlocks := make(map[string]schema.Block, len(integrationSpec.Credentials))
+	for _, credentialSpec := range integrationSpec.Credentials {
+		attributes := make(map[string]schema.Attribute, len(credentialSpec.Fields))
+		for _, fieldSpec := range credentialSpec.Fields {
+			attributes[fieldSpec.Name] = schema.StringAttribute{
+				Description: fieldSpec.Description,
+				Computed:    true,
+				Sensitive:   fieldSpec.Sensitive,
+			}
+		}
+		credentialBlocks[credentialSpec.Name] = schema.SingleNestedBlock{
+			Description: credentialSpec.Description,
+			Attributes:  attributes,
+		}
+	}
+
+	return schema.SingleNestedBlock{
+		Description: integrationSpec.Description,
+		Blocks:      credentialBlocks,
+	}
+}
+
+func (d *actionConnectionDatasource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
+	var state connectionDatasourceModel
+	diags := request.Config.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	connModel, httpStatusCode, err := readConnection(d.Auth, d.Api, state.ID.ValueString(), connectionResourceModel{connectionModel: state.connectionModel})
+	if err != nil {
+		if httpStatusCode == http.StatusNotFound {
+			// If the connection is not found, we log a warning and remove the resource from state. This may be due to changes outside of Terraform.
+			response.Diagnostics.AddWarning("The connection with ID '"+state.ID.ValueString()+"' is not found. It may have been deleted outside of Terraform.", err.Error())
+			response.State.RemoveResource(ctx)
+			return
+		}
+		response.Diagnostics.AddError("Could not read connection", err.Error())
+		return
+	}
+
+	diags = response.State.Set(ctx, &connectionDatasourceModel{connectionModel: connModel.connectionModel})
+	response.Diagnostics.Append(diags...)
+}

@@ -36,16 +36,25 @@ resource "datadog_slo_correction" "example_slo_correction" {
   description = "correction example"
   start       = 1735707000
   end         = 1735718600
-  slo_id      = "datadog_service_level_objective.example_slo.id"
+  slo_id      = datadog_service_level_objective.example_slo.id
   timezone    = "UTC"
 }
 resource "datadog_slo_correction" "example_slo_correction_with_recurrence" {
   category    = "Scheduled Maintenance"
   description = "correction example with recurrence"
   start       = 1735707000
-  rrule       = "FREQ=DAILY;INTERVAL=3;"
+  rrule       = "FREQ=DAILY;INTERVAL=3;COUNT=3"
   duration    = 3600
-  slo_id      = "datadog_service_level_objective.example_slo.id"
+  slo_id      = datadog_service_level_objective.example_slo.id
+  timezone    = "UTC"
+}
+
+resource "datadog_slo_correction" "example_slo_correction_with_query" {
+  category    = "Scheduled Maintenance"
+  description = "correction example with query"
+  start       = 1735707000
+  end         = 1735718600
+  slo_query   = "env:prod service:checkout"
   timezone    = "UTC"
 }
 ```
@@ -55,25 +64,28 @@ resource "datadog_slo_correction" "example_slo_correction_with_recurrence" {
 
 ### Required
 
-- **category** (String) Category the SLO correction belongs to. Valid values are `Scheduled Maintenance`, `Outside Business Hours`, `Deployment`, `Other`.
-- **slo_id** (String) ID of the SLO that this correction will be applied to.
-- **start** (Number) Starting time of the correction in epoch seconds.
+- `category` (String) Category the SLO correction belongs to. Valid values are `Scheduled Maintenance`, `Outside Business Hours`, `Deployment`, `Other`.
+- `start` (Number) Starting time of the correction in epoch seconds.
 
 ### Optional
 
-- **description** (String) Description of the correction being made.
-- **duration** (Number) Length of time in seconds for a specified `rrule` recurring SLO correction (required if specifying `rrule`)
-- **end** (Number) Ending time of the correction in epoch seconds. Required for one time corrections, but optional if `rrule` is specified
-- **rrule** (String) Recurrence rules as defined in the iCalendar RFC 5545. Supported rules for SLO corrections are `FREQ`, `INTERVAL`, `COUNT` and `UNTIL`.
-- **timezone** (String) The timezone to display in the UI for the correction times (defaults to "UTC")
+- `description` (String) Description of the correction being made.
+- `duration` (Number) Length of time in seconds for a specified `rrule` recurring SLO correction (required if specifying `rrule`)
+- `end` (Number) Ending time of the correction in epoch seconds. Required for one time corrections, but optional if `rrule` is specified
+- `rrule` (String) Recurrence rules as defined in the iCalendar RFC 5545. Supported rules for SLO corrections are `FREQ`, `INTERVAL`, `COUNT` and `UNTIL`.
+- `slo_id` (String) ID of the single SLO that this correction will be applied to.
+- `slo_query` (String) Query that matches the SLOs this correction will be applied to.
+- `timezone` (String) The timezone to display in the UI for the correction times. Prefers IANA timezone name format (for example, 'America/Los_Angeles', 'Europe/Paris'), but some common standard abbreviations are supported. Defaults to 'UTC'.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 terraform import datadog_slo_correction.testing_slo_correction 11111111-3fee-11eb-8a13-77cd9f15119e

@@ -168,24 +168,26 @@ resource "datadog_logs_custom_pipeline" "sample_pipeline" {
 
 ### Required
 
-- **filter** (Block List, Min: 1) (see [below for nested schema](#nestedblock--filter))
-- **name** (String)
+- `filter` (Block List, Min: 1) (see [below for nested schema](#nestedblock--filter))
+- `name` (String)
 
 ### Optional
 
-- **is_enabled** (Boolean)
-- **processor** (Block List) (see [below for nested schema](#nestedblock--processor))
+- `description` (String)
+- `is_enabled` (Boolean)
+- `processor` (Block List) (see [below for nested schema](#nestedblock--processor))
+- `tags` (Set of String)
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
 
 <a id="nestedblock--filter"></a>
 ### Nested Schema for `filter`
 
 Required:
 
-- **query** (String) Filter criteria of the category.
+- `query` (String) Filter criteria of the category.
 
 
 <a id="nestedblock--processor"></a>
@@ -193,35 +195,215 @@ Required:
 
 Optional:
 
-- **arithmetic_processor** (Block List, Max: 1) Arithmetic Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#arithmetic-processor) (see [below for nested schema](#nestedblock--processor--arithmetic_processor))
-- **attribute_remapper** (Block List, Max: 1) Attribute Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#remapper) (see [below for nested schema](#nestedblock--processor--attribute_remapper))
-- **category_processor** (Block List, Max: 1) Category Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#category-processor) (see [below for nested schema](#nestedblock--processor--category_processor))
-- **date_remapper** (Block List, Max: 1) Date Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-date-remapper) (see [below for nested schema](#nestedblock--processor--date_remapper))
-- **geo_ip_parser** (Block List, Max: 1) Date GeoIP Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#geoip-parser) (see [below for nested schema](#nestedblock--processor--geo_ip_parser))
-- **grok_parser** (Block List, Max: 1) Grok Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#grok-parser) (see [below for nested schema](#nestedblock--processor--grok_parser))
-- **lookup_processor** (Block List, Max: 1) Lookup Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#lookup-processor) (see [below for nested schema](#nestedblock--processor--lookup_processor))
-- **message_remapper** (Block List, Max: 1) Message Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-message-remapper) (see [below for nested schema](#nestedblock--processor--message_remapper))
-- **pipeline** (Block List, Max: 1) (see [below for nested schema](#nestedblock--processor--pipeline))
-- **service_remapper** (Block List, Max: 1) Service Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#service-remapper) (see [below for nested schema](#nestedblock--processor--service_remapper))
-- **status_remapper** (Block List, Max: 1) Status Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-status-remapper) (see [below for nested schema](#nestedblock--processor--status_remapper))
-- **string_builder_processor** (Block List, Max: 1) String Builder Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#string-builder-processor) (see [below for nested schema](#nestedblock--processor--string_builder_processor))
-- **trace_id_remapper** (Block List, Max: 1) Trace ID Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#trace-remapper) (see [below for nested schema](#nestedblock--processor--trace_id_remapper))
-- **url_parser** (Block List, Max: 1) URL Parser Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#url-parser) (see [below for nested schema](#nestedblock--processor--url_parser))
-- **user_agent_parser** (Block List, Max: 1) User-Agent Parser Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#user-agent-parser) (see [below for nested schema](#nestedblock--processor--user_agent_parser))
+- `arithmetic_processor` (Block List, Max: 1) Arithmetic Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#arithmetic-processor) (see [below for nested schema](#nestedblock--processor--arithmetic_processor))
+- `array_map_processor` (Block List, Max: 1) Array-Map Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/log_configuration/processors/?tab=ui#array-map-processor) (see [below for nested schema](#nestedblock--processor--array_map_processor))
+- `array_processor` (Block List, Max: 1) Array Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#array-processor) (see [below for nested schema](#nestedblock--processor--array_processor))
+- `attribute_remapper` (Block List, Max: 1) Attribute Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#remapper) (see [below for nested schema](#nestedblock--processor--attribute_remapper))
+- `category_processor` (Block List, Max: 1) Category Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#category-processor) (see [below for nested schema](#nestedblock--processor--category_processor))
+- `date_remapper` (Block List, Max: 1) Date Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-date-remapper) (see [below for nested schema](#nestedblock--processor--date_remapper))
+- `decoder_processor` (Block List, Max: 1) Decoder Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/log_configuration/processors/?tab=ui#decoder-processor) (see [below for nested schema](#nestedblock--processor--decoder_processor))
+- `exclude_attribute_processor` (Block List, Max: 1) Exclude Attribute Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/log_configuration/processors/?tab=ui#exclude-attribute-processor) (see [below for nested schema](#nestedblock--processor--exclude_attribute_processor))
+- `geo_ip_parser` (Block List, Max: 1) Date GeoIP Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#geoip-parser) (see [below for nested schema](#nestedblock--processor--geo_ip_parser))
+- `grok_parser` (Block List, Max: 1) Grok Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#grok-parser) (see [below for nested schema](#nestedblock--processor--grok_parser))
+- `lookup_processor` (Block List, Max: 1) Lookup Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#lookup-processor) (see [below for nested schema](#nestedblock--processor--lookup_processor))
+- `message_remapper` (Block List, Max: 1) Message Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-message-remapper) (see [below for nested schema](#nestedblock--processor--message_remapper))
+- `pipeline` (Block List, Max: 1) (see [below for nested schema](#nestedblock--processor--pipeline))
+- `reference_table_lookup_processor` (Block List, Max: 1) Reference Table Lookup Processor. Reference Tables are in public beta. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#lookup-processor) (see [below for nested schema](#nestedblock--processor--reference_table_lookup_processor))
+- `schema_processor` (Block List, Max: 1) Schema Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#schema-processor) (see [below for nested schema](#nestedblock--processor--schema_processor))
+- `service_remapper` (Block List, Max: 1) Service Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#service-remapper) (see [below for nested schema](#nestedblock--processor--service_remapper))
+- `span_id_remapper` (Block List, Max: 1) Span ID Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/log_configuration/processors/?tab=ui#span-remapper) (see [below for nested schema](#nestedblock--processor--span_id_remapper))
+- `status_remapper` (Block List, Max: 1) Status Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-status-remapper) (see [below for nested schema](#nestedblock--processor--status_remapper))
+- `string_builder_processor` (Block List, Max: 1) String Builder Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#string-builder-processor) (see [below for nested schema](#nestedblock--processor--string_builder_processor))
+- `trace_id_remapper` (Block List, Max: 1) Trace ID Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#trace-remapper) (see [below for nested schema](#nestedblock--processor--trace_id_remapper))
+- `url_parser` (Block List, Max: 1) URL Parser Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#url-parser) (see [below for nested schema](#nestedblock--processor--url_parser))
+- `user_agent_parser` (Block List, Max: 1) User-Agent Parser Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#user-agent-parser) (see [below for nested schema](#nestedblock--processor--user_agent_parser))
 
 <a id="nestedblock--processor--arithmetic_processor"></a>
 ### Nested Schema for `processor.arithmetic_processor`
 
 Required:
 
-- **expression** (String) Arithmetic operation between one or more log attributes.
-- **target** (String) Name of the attribute that contains the result of the arithmetic operation.
+- `expression` (String) Arithmetic operation between one or more log attributes.
+- `target` (String) Name of the attribute that contains the result of the arithmetic operation.
 
 Optional:
 
-- **is_enabled** (Boolean) Boolean value to enable your pipeline.
-- **is_replace_missing** (Boolean) If true, it replaces all missing attributes of expression by 0, false skips the operation if an attribute is missing.
-- **name** (String) Your pipeline name.
+- `is_enabled` (Boolean) Boolean value to enable your pipeline.
+- `is_replace_missing` (Boolean) If true, it replaces all missing attributes of expression by 0, false skips the operation if an attribute is missing.
+- `name` (String) Your pipeline name.
+
+
+<a id="nestedblock--processor--array_map_processor"></a>
+### Nested Schema for `processor.array_map_processor`
+
+Required:
+
+- `processors` (Block List, Min: 1) Sub-processors applied to each element. Allowed types: attribute_remapper, string_builder_processor, arithmetic_processor, category_processor. (see [below for nested schema](#nestedblock--processor--array_map_processor--processors))
+- `source` (String) Attribute path of the source array.
+- `target` (String) Attribute path of the output array.
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled.
+- `name` (String) Name of the processor.
+- `preserve_source` (Boolean) Remove or preserve the source array after processing. Defaults to `true`.
+
+<a id="nestedblock--processor--array_map_processor--processors"></a>
+### Nested Schema for `processor.array_map_processor.processors`
+
+Optional:
+
+- `arithmetic_processor` (Block List, Max: 1) Array-map arithmetic sub-processor. (see [below for nested schema](#nestedblock--processor--array_map_processor--processors--arithmetic_processor))
+- `attribute_remapper` (Block List, Max: 1) Array-map attribute remapper sub-processor. (see [below for nested schema](#nestedblock--processor--array_map_processor--processors--attribute_remapper))
+- `category_processor` (Block List, Max: 1) Array-map category sub-processor. (see [below for nested schema](#nestedblock--processor--array_map_processor--processors--category_processor))
+- `string_builder_processor` (Block List, Max: 1) Array-map string builder sub-processor. (see [below for nested schema](#nestedblock--processor--array_map_processor--processors--string_builder_processor))
+
+<a id="nestedblock--processor--array_map_processor--processors--arithmetic_processor"></a>
+### Nested Schema for `processor.array_map_processor.processors.arithmetic_processor`
+
+Required:
+
+- `expression` (String) Arithmetic formula.
+- `target` (String) Target attribute path for the result.
+
+Optional:
+
+- `is_replace_missing` (Boolean) Replace missing attributes with `0`.
+- `name` (String) Name of the sub-processor.
+
+
+<a id="nestedblock--processor--array_map_processor--processors--attribute_remapper"></a>
+### Nested Schema for `processor.array_map_processor.processors.attribute_remapper`
+
+Required:
+
+- `sources` (List of String) List of source attributes.
+- `target` (String) Target attribute path.
+
+Optional:
+
+- `name` (String) Name of the sub-processor.
+- `override_on_conflict` (Boolean) Override the target element if already set.
+- `preserve_source` (Boolean) Remove or preserve the remapped source element. Defaults to `false`.
+- `target_format` (String) If the target type is an attribute, cast the value to a new type (auto, string, integer, double).
+
+
+<a id="nestedblock--processor--array_map_processor--processors--category_processor"></a>
+### Nested Schema for `processor.array_map_processor.processors.category_processor`
+
+Required:
+
+- `category` (Block List, Min: 1) List of filters to match or exclude a log. (see [below for nested schema](#nestedblock--processor--array_map_processor--processors--category_processor--category))
+- `target` (String) Target attribute path for the category value.
+
+Optional:
+
+- `name` (String) Name of the sub-processor.
+
+<a id="nestedblock--processor--array_map_processor--processors--category_processor--category"></a>
+### Nested Schema for `processor.array_map_processor.processors.category_processor.category`
+
+Required:
+
+- `filter` (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--array_map_processor--processors--category_processor--category--filter))
+- `name` (String) Name of the category.
+
+<a id="nestedblock--processor--array_map_processor--processors--category_processor--category--filter"></a>
+### Nested Schema for `processor.array_map_processor.processors.category_processor.category.filter`
+
+Required:
+
+- `query` (String) Filter criteria of the category.
+
+
+
+
+<a id="nestedblock--processor--array_map_processor--processors--string_builder_processor"></a>
+### Nested Schema for `processor.array_map_processor.processors.string_builder_processor`
+
+Required:
+
+- `target` (String) Target attribute path for the result.
+- `template` (String) Formula with one or more attributes and raw text.
+
+Optional:
+
+- `is_replace_missing` (Boolean) Replace missing attributes with an empty string.
+- `name` (String) Name of the sub-processor.
+
+
+
+
+<a id="nestedblock--processor--array_processor"></a>
+### Nested Schema for `processor.array_processor`
+
+Required:
+
+- `operation` (Block List, Min: 1, Max: 1) Operation to perform on the array. (see [below for nested schema](#nestedblock--processor--array_processor--operation))
+
+Optional:
+
+- `is_enabled` (Boolean) Boolean value to enable your processor.
+- `name` (String) Your processor name.
+
+<a id="nestedblock--processor--array_processor--operation"></a>
+### Nested Schema for `processor.array_processor.operation`
+
+Optional:
+
+- `append` (Block List, Max: 1) Operation that appends a value to a target array attribute. (see [below for nested schema](#nestedblock--processor--array_processor--operation--append))
+- `key_value` (Block List, Max: 1) Operation that extracts key-value pairs from a source array and stores the result in the target attribute. (see [below for nested schema](#nestedblock--processor--array_processor--operation--key_value))
+- `length` (Block List, Max: 1) Operation that computes the length of a source array and stores the result in a target attribute. (see [below for nested schema](#nestedblock--processor--array_processor--operation--length))
+- `select` (Block List, Max: 1) Operation that finds an object in a source array using a filter, and then extracts a value from that found object and puts that value into the target attribute. (see [below for nested schema](#nestedblock--processor--array_processor--operation--select))
+
+<a id="nestedblock--processor--array_processor--operation--append"></a>
+### Nested Schema for `processor.array_processor.operation.append`
+
+Required:
+
+- `source` (String) Attribute path containing the value to append.
+- `target` (String) Attribute path of the array to append to.
+
+Optional:
+
+- `preserve_source` (Boolean) Remove or preserve the remapped source element. Defaults to `true`.
+
+
+<a id="nestedblock--processor--array_processor--operation--key_value"></a>
+### Nested Schema for `processor.array_processor.operation.key_value`
+
+Required:
+
+- `key_to_extract` (String) Key of the attribute in each array element that holds the name to use for the extracted attribute.
+- `source` (String) Attribute path of the array to extract key-value pairs from.
+- `value_to_extract` (String) Key of the attribute in each array element that holds the value to use for the extracted attribute.
+
+Optional:
+
+- `override_on_conflict` (Boolean) Whether to override the target element if it's already set. Defaults to `false`.
+- `target` (String) Attribute that receives the extracted key-value pairs. If not specified, the extracted attributes are added at the root level of the log.
+
+
+<a id="nestedblock--processor--array_processor--operation--length"></a>
+### Nested Schema for `processor.array_processor.operation.length`
+
+Required:
+
+- `source` (String) Attribute path of the array to compute the length of.
+- `target` (String) Attribute that receives the computed length.
+
+
+<a id="nestedblock--processor--array_processor--operation--select"></a>
+### Nested Schema for `processor.array_processor.operation.select`
+
+Required:
+
+- `filter` (String) Filter expression (e.g. key1:value1 OR key2:value2) used to find the matching element.
+- `source` (String) Attribute path of the array to search into.
+- `target` (String) Attribute that receives the extracted value.
+- `value_to_extract` (String) Attribute key from the matching object that should be extracted.
+
+
 
 
 <a id="nestedblock--processor--attribute_remapper"></a>
@@ -229,18 +411,18 @@ Optional:
 
 Required:
 
-- **source_type** (String) Defines where the sources are from (log `attribute` or `tag`).
-- **sources** (List of String) List of source attributes or tags.
-- **target** (String) Final attribute or tag name to remap the sources.
-- **target_type** (String) Defines if the target is a log `attribute` or `tag`.
+- `source_type` (String) Defines where the sources are from (log `attribute` or `tag`).
+- `sources` (List of String) List of source attributes or tags.
+- `target` (String) Final attribute or tag name to remap the sources.
+- `target_type` (String) Defines if the target is a log `attribute` or `tag`.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor
-- **override_on_conflict** (Boolean) Override the target element if already set.
-- **preserve_source** (Boolean) Remove or preserve the remapped source element.
-- **target_format** (String) If the `target_type` of the remapper is `attribute`, try to cast the value to a new specific type. If the cast is not possible, the original type is kept. `string`, `integer`, or `double` are the possible types. If the `target_type` is `tag`, this parameter may not be specified.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor
+- `override_on_conflict` (Boolean) Override the target element if already set.
+- `preserve_source` (Boolean) Remove or preserve the remapped source element.
+- `target_format` (String) If the `target_type` of the remapper is `attribute`, try to cast the value to a new specific type. If the cast is not possible, the original type is kept. `string`, `integer`, or `double` are the possible types. If the `target_type` is `tag`, this parameter may not be specified.
 
 
 <a id="nestedblock--processor--category_processor"></a>
@@ -248,28 +430,28 @@ Optional:
 
 Required:
 
-- **category** (Block List, Min: 1) List of filters to match or exclude a log with their corresponding name to assign a custom value to the log. (see [below for nested schema](#nestedblock--processor--category_processor--category))
-- **target** (String) Name of the target attribute whose value is defined by the matching category.
+- `category` (Block List, Min: 1) List of filters to match or exclude a log with their corresponding name to assign a custom value to the log. (see [below for nested schema](#nestedblock--processor--category_processor--category))
+- `target` (String) Name of the target attribute whose value is defined by the matching category.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the category
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the category
 
 <a id="nestedblock--processor--category_processor--category"></a>
 ### Nested Schema for `processor.category_processor.category`
 
 Required:
 
-- **filter** (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--category_processor--category--filter))
-- **name** (String)
+- `filter` (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--category_processor--category--filter))
+- `name` (String)
 
 <a id="nestedblock--processor--category_processor--category--filter"></a>
 ### Nested Schema for `processor.category_processor.category.filter`
 
 Required:
 
-- **query** (String) Filter criteria of the category.
+- `query` (String) Filter criteria of the category.
 
 
 
@@ -279,12 +461,41 @@ Required:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
+- `sources` (List of String) List of source attributes.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
+
+
+<a id="nestedblock--processor--decoder_processor"></a>
+### Nested Schema for `processor.decoder_processor`
+
+Required:
+
+- `binary_to_text_encoding` (String) Encoding type: base64 or base16
+- `input_representation` (String) Input representation: utf-8 or integer
+- `source` (String) Encoded message
+- `target` (String) Decoded message
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
+
+
+<a id="nestedblock--processor--exclude_attribute_processor"></a>
+### Nested Schema for `processor.exclude_attribute_processor`
+
+Required:
+
+- `attribute_to_exclude` (String) Name of the log attribute to remove from the log event.
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
 
 
 <a id="nestedblock--processor--geo_ip_parser"></a>
@@ -292,13 +503,13 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
-- **target** (String) Name of the parent attribute that contains all the extracted details from the sources.
+- `sources` (List of String) List of source attributes.
+- `target` (String) Name of the parent attribute that contains all the extracted details from the sources.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
 
 
 <a id="nestedblock--processor--grok_parser"></a>
@@ -306,22 +517,22 @@ Optional:
 
 Required:
 
-- **grok** (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--grok_parser--grok))
-- **source** (String) Name of the log attribute to parse.
+- `grok` (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--grok_parser--grok))
+- `source` (String) Name of the log attribute to parse.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor
-- **samples** (List of String) List of sample logs for this parser. It can save up to 5 samples. Each sample takes up to 5000 characters.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor
+- `samples` (List of String) List of sample logs for this parser. It can save up to 5 samples. Each sample takes up to 5000 characters.
 
 <a id="nestedblock--processor--grok_parser--grok"></a>
 ### Nested Schema for `processor.grok_parser.grok`
 
 Required:
 
-- **match_rules** (String) Match rules for your grok parser.
-- **support_rules** (String) Support rules for your grok parser.
+- `match_rules` (String) Match rules for your grok parser.
+- `support_rules` (String) Support rules for your grok parser.
 
 
 
@@ -330,15 +541,15 @@ Required:
 
 Required:
 
-- **lookup_table** (List of String) List of entries of the lookup table using `key,value` format.
-- **source** (String) Name of the source attribute used to do the lookup.
-- **target** (String) Name of the attribute that contains the result of the lookup.
+- `lookup_table` (List of String) List of entries of the lookup table using `key,value` format.
+- `source` (String) Name of the source attribute used to do the lookup.
+- `target` (String) Name of the attribute that contains the result of the lookup.
 
 Optional:
 
-- **default_lookup** (String) Default lookup value to use if there is no entry in the lookup table for the value of the source attribute.
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor
+- `default_lookup` (String) Default lookup value to use if there is no entry in the lookup table for the value of the source attribute.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor
 
 
 <a id="nestedblock--processor--message_remapper"></a>
@@ -346,12 +557,12 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
+- `sources` (List of String) List of source attributes.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
 
 
 <a id="nestedblock--processor--pipeline"></a>
@@ -359,20 +570,22 @@ Optional:
 
 Required:
 
-- **filter** (Block List, Min: 1) (see [below for nested schema](#nestedblock--processor--pipeline--filter))
-- **name** (String)
+- `filter` (Block List, Min: 1) (see [below for nested schema](#nestedblock--processor--pipeline--filter))
+- `name` (String)
 
 Optional:
 
-- **is_enabled** (Boolean)
-- **processor** (Block List) (see [below for nested schema](#nestedblock--processor--pipeline--processor))
+- `description` (String)
+- `is_enabled` (Boolean)
+- `processor` (Block List) (see [below for nested schema](#nestedblock--processor--pipeline--processor))
+- `tags` (Set of String)
 
 <a id="nestedblock--processor--pipeline--filter"></a>
 ### Nested Schema for `processor.pipeline.filter`
 
 Required:
 
-- **query** (String) Filter criteria of the category.
+- `query` (String) Filter criteria of the category.
 
 
 <a id="nestedblock--processor--pipeline--processor"></a>
@@ -380,34 +593,214 @@ Required:
 
 Optional:
 
-- **arithmetic_processor** (Block List, Max: 1) Arithmetic Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#arithmetic-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--arithmetic_processor))
-- **attribute_remapper** (Block List, Max: 1) Attribute Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--attribute_remapper))
-- **category_processor** (Block List, Max: 1) Category Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#category-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--category_processor))
-- **date_remapper** (Block List, Max: 1) Date Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-date-remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--date_remapper))
-- **geo_ip_parser** (Block List, Max: 1) Date GeoIP Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#geoip-parser) (see [below for nested schema](#nestedblock--processor--pipeline--processor--geo_ip_parser))
-- **grok_parser** (Block List, Max: 1) Grok Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#grok-parser) (see [below for nested schema](#nestedblock--processor--pipeline--processor--grok_parser))
-- **lookup_processor** (Block List, Max: 1) Lookup Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#lookup-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--lookup_processor))
-- **message_remapper** (Block List, Max: 1) Message Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-message-remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--message_remapper))
-- **service_remapper** (Block List, Max: 1) Service Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#service-remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--service_remapper))
-- **status_remapper** (Block List, Max: 1) Status Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-status-remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--status_remapper))
-- **string_builder_processor** (Block List, Max: 1) String Builder Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#string-builder-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--string_builder_processor))
-- **trace_id_remapper** (Block List, Max: 1) Trace ID Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#trace-remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--trace_id_remapper))
-- **url_parser** (Block List, Max: 1) URL Parser Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#url-parser) (see [below for nested schema](#nestedblock--processor--pipeline--processor--url_parser))
-- **user_agent_parser** (Block List, Max: 1) User-Agent Parser Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#user-agent-parser) (see [below for nested schema](#nestedblock--processor--pipeline--processor--user_agent_parser))
+- `arithmetic_processor` (Block List, Max: 1) Arithmetic Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#arithmetic-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--arithmetic_processor))
+- `array_map_processor` (Block List, Max: 1) Array-Map Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/log_configuration/processors/?tab=ui#array-map-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_map_processor))
+- `array_processor` (Block List, Max: 1) Array Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#array-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_processor))
+- `attribute_remapper` (Block List, Max: 1) Attribute Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--attribute_remapper))
+- `category_processor` (Block List, Max: 1) Category Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#category-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--category_processor))
+- `date_remapper` (Block List, Max: 1) Date Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-date-remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--date_remapper))
+- `decoder_processor` (Block List, Max: 1) Decoder Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/log_configuration/processors/?tab=ui#decoder-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--decoder_processor))
+- `exclude_attribute_processor` (Block List, Max: 1) Exclude Attribute Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/log_configuration/processors/?tab=ui#exclude-attribute-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--exclude_attribute_processor))
+- `geo_ip_parser` (Block List, Max: 1) Date GeoIP Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#geoip-parser) (see [below for nested schema](#nestedblock--processor--pipeline--processor--geo_ip_parser))
+- `grok_parser` (Block List, Max: 1) Grok Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#grok-parser) (see [below for nested schema](#nestedblock--processor--pipeline--processor--grok_parser))
+- `lookup_processor` (Block List, Max: 1) Lookup Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#lookup-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--lookup_processor))
+- `message_remapper` (Block List, Max: 1) Message Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-message-remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--message_remapper))
+- `reference_table_lookup_processor` (Block List, Max: 1) Reference Table Lookup Processor. Reference Tables are in public beta. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#lookup-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--reference_table_lookup_processor))
+- `schema_processor` (Block List, Max: 1) Schema Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#schema-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--schema_processor))
+- `service_remapper` (Block List, Max: 1) Service Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#service-remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--service_remapper))
+- `span_id_remapper` (Block List, Max: 1) Span ID Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/log_configuration/processors/?tab=ui#span-remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--span_id_remapper))
+- `status_remapper` (Block List, Max: 1) Status Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#log-status-remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--status_remapper))
+- `string_builder_processor` (Block List, Max: 1) String Builder Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#string-builder-processor) (see [below for nested schema](#nestedblock--processor--pipeline--processor--string_builder_processor))
+- `trace_id_remapper` (Block List, Max: 1) Trace ID Remapper Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#trace-remapper) (see [below for nested schema](#nestedblock--processor--pipeline--processor--trace_id_remapper))
+- `url_parser` (Block List, Max: 1) URL Parser Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#url-parser) (see [below for nested schema](#nestedblock--processor--pipeline--processor--url_parser))
+- `user_agent_parser` (Block List, Max: 1) User-Agent Parser Processor. More information can be found in the [official docs](https://docs.datadoghq.com/logs/processing/processors/?tab=ui#user-agent-parser) (see [below for nested schema](#nestedblock--processor--pipeline--processor--user_agent_parser))
 
 <a id="nestedblock--processor--pipeline--processor--arithmetic_processor"></a>
 ### Nested Schema for `processor.pipeline.processor.arithmetic_processor`
 
 Required:
 
-- **expression** (String) Arithmetic operation between one or more log attributes.
-- **target** (String) Name of the attribute that contains the result of the arithmetic operation.
+- `expression` (String) Arithmetic operation between one or more log attributes.
+- `target` (String) Name of the attribute that contains the result of the arithmetic operation.
 
 Optional:
 
-- **is_enabled** (Boolean) Boolean value to enable your pipeline.
-- **is_replace_missing** (Boolean) If true, it replaces all missing attributes of expression by 0, false skips the operation if an attribute is missing.
-- **name** (String) Your pipeline name.
+- `is_enabled` (Boolean) Boolean value to enable your pipeline.
+- `is_replace_missing` (Boolean) If true, it replaces all missing attributes of expression by 0, false skips the operation if an attribute is missing.
+- `name` (String) Your pipeline name.
+
+
+<a id="nestedblock--processor--pipeline--processor--array_map_processor"></a>
+### Nested Schema for `processor.pipeline.processor.array_map_processor`
+
+Required:
+
+- `processors` (Block List, Min: 1) Sub-processors applied to each element. Allowed types: attribute_remapper, string_builder_processor, arithmetic_processor, category_processor. (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_map_processor--processors))
+- `source` (String) Attribute path of the source array.
+- `target` (String) Attribute path of the output array.
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled.
+- `name` (String) Name of the processor.
+- `preserve_source` (Boolean) Remove or preserve the source array after processing. Defaults to `true`.
+
+<a id="nestedblock--processor--pipeline--processor--array_map_processor--processors"></a>
+### Nested Schema for `processor.pipeline.processor.array_map_processor.processors`
+
+Optional:
+
+- `arithmetic_processor` (Block List, Max: 1) Array-map arithmetic sub-processor. (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_map_processor--processors--arithmetic_processor))
+- `attribute_remapper` (Block List, Max: 1) Array-map attribute remapper sub-processor. (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_map_processor--processors--attribute_remapper))
+- `category_processor` (Block List, Max: 1) Array-map category sub-processor. (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_map_processor--processors--category_processor))
+- `string_builder_processor` (Block List, Max: 1) Array-map string builder sub-processor. (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_map_processor--processors--string_builder_processor))
+
+<a id="nestedblock--processor--pipeline--processor--array_map_processor--processors--arithmetic_processor"></a>
+### Nested Schema for `processor.pipeline.processor.array_map_processor.processors.arithmetic_processor`
+
+Required:
+
+- `expression` (String) Arithmetic formula.
+- `target` (String) Target attribute path for the result.
+
+Optional:
+
+- `is_replace_missing` (Boolean) Replace missing attributes with `0`.
+- `name` (String) Name of the sub-processor.
+
+
+<a id="nestedblock--processor--pipeline--processor--array_map_processor--processors--attribute_remapper"></a>
+### Nested Schema for `processor.pipeline.processor.array_map_processor.processors.attribute_remapper`
+
+Required:
+
+- `sources` (List of String) List of source attributes.
+- `target` (String) Target attribute path.
+
+Optional:
+
+- `name` (String) Name of the sub-processor.
+- `override_on_conflict` (Boolean) Override the target element if already set.
+- `preserve_source` (Boolean) Remove or preserve the remapped source element. Defaults to `false`.
+- `target_format` (String) If the target type is an attribute, cast the value to a new type (auto, string, integer, double).
+
+
+<a id="nestedblock--processor--pipeline--processor--array_map_processor--processors--category_processor"></a>
+### Nested Schema for `processor.pipeline.processor.array_map_processor.processors.category_processor`
+
+Required:
+
+- `category` (Block List, Min: 1) List of filters to match or exclude a log. (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_map_processor--processors--category_processor--category))
+- `target` (String) Target attribute path for the category value.
+
+Optional:
+
+- `name` (String) Name of the sub-processor.
+
+<a id="nestedblock--processor--pipeline--processor--array_map_processor--processors--category_processor--category"></a>
+### Nested Schema for `processor.pipeline.processor.array_map_processor.processors.category_processor.category`
+
+Required:
+
+- `filter` (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_map_processor--processors--category_processor--category--filter))
+- `name` (String) Name of the category.
+
+<a id="nestedblock--processor--pipeline--processor--array_map_processor--processors--category_processor--category--filter"></a>
+### Nested Schema for `processor.pipeline.processor.array_map_processor.processors.category_processor.category.filter`
+
+Required:
+
+- `query` (String) Filter criteria of the category.
+
+
+
+
+<a id="nestedblock--processor--pipeline--processor--array_map_processor--processors--string_builder_processor"></a>
+### Nested Schema for `processor.pipeline.processor.array_map_processor.processors.string_builder_processor`
+
+Required:
+
+- `target` (String) Target attribute path for the result.
+- `template` (String) Formula with one or more attributes and raw text.
+
+Optional:
+
+- `is_replace_missing` (Boolean) Replace missing attributes with an empty string.
+- `name` (String) Name of the sub-processor.
+
+
+
+
+<a id="nestedblock--processor--pipeline--processor--array_processor"></a>
+### Nested Schema for `processor.pipeline.processor.array_processor`
+
+Required:
+
+- `operation` (Block List, Min: 1, Max: 1) Operation to perform on the array. (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_processor--operation))
+
+Optional:
+
+- `is_enabled` (Boolean) Boolean value to enable your processor.
+- `name` (String) Your processor name.
+
+<a id="nestedblock--processor--pipeline--processor--array_processor--operation"></a>
+### Nested Schema for `processor.pipeline.processor.array_processor.operation`
+
+Optional:
+
+- `append` (Block List, Max: 1) Operation that appends a value to a target array attribute. (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_processor--operation--append))
+- `key_value` (Block List, Max: 1) Operation that extracts key-value pairs from a source array and stores the result in the target attribute. (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_processor--operation--key_value))
+- `length` (Block List, Max: 1) Operation that computes the length of a source array and stores the result in a target attribute. (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_processor--operation--length))
+- `select` (Block List, Max: 1) Operation that finds an object in a source array using a filter, and then extracts a value from that found object and puts that value into the target attribute. (see [below for nested schema](#nestedblock--processor--pipeline--processor--array_processor--operation--select))
+
+<a id="nestedblock--processor--pipeline--processor--array_processor--operation--append"></a>
+### Nested Schema for `processor.pipeline.processor.array_processor.operation.append`
+
+Required:
+
+- `source` (String) Attribute path containing the value to append.
+- `target` (String) Attribute path of the array to append to.
+
+Optional:
+
+- `preserve_source` (Boolean) Remove or preserve the remapped source element. Defaults to `true`.
+
+
+<a id="nestedblock--processor--pipeline--processor--array_processor--operation--key_value"></a>
+### Nested Schema for `processor.pipeline.processor.array_processor.operation.key_value`
+
+Required:
+
+- `key_to_extract` (String) Key of the attribute in each array element that holds the name to use for the extracted attribute.
+- `source` (String) Attribute path of the array to extract key-value pairs from.
+- `value_to_extract` (String) Key of the attribute in each array element that holds the value to use for the extracted attribute.
+
+Optional:
+
+- `override_on_conflict` (Boolean) Whether to override the target element if it's already set. Defaults to `false`.
+- `target` (String) Attribute that receives the extracted key-value pairs. If not specified, the extracted attributes are added at the root level of the log.
+
+
+<a id="nestedblock--processor--pipeline--processor--array_processor--operation--length"></a>
+### Nested Schema for `processor.pipeline.processor.array_processor.operation.length`
+
+Required:
+
+- `source` (String) Attribute path of the array to compute the length of.
+- `target` (String) Attribute that receives the computed length.
+
+
+<a id="nestedblock--processor--pipeline--processor--array_processor--operation--select"></a>
+### Nested Schema for `processor.pipeline.processor.array_processor.operation.select`
+
+Required:
+
+- `filter` (String) Filter expression (e.g. key1:value1 OR key2:value2) used to find the matching element.
+- `source` (String) Attribute path of the array to search into.
+- `target` (String) Attribute that receives the extracted value.
+- `value_to_extract` (String) Attribute key from the matching object that should be extracted.
+
+
 
 
 <a id="nestedblock--processor--pipeline--processor--attribute_remapper"></a>
@@ -415,18 +808,18 @@ Optional:
 
 Required:
 
-- **source_type** (String) Defines where the sources are from (log `attribute` or `tag`).
-- **sources** (List of String) List of source attributes or tags.
-- **target** (String) Final attribute or tag name to remap the sources.
-- **target_type** (String) Defines if the target is a log `attribute` or `tag`.
+- `source_type` (String) Defines where the sources are from (log `attribute` or `tag`).
+- `sources` (List of String) List of source attributes or tags.
+- `target` (String) Final attribute or tag name to remap the sources.
+- `target_type` (String) Defines if the target is a log `attribute` or `tag`.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor
-- **override_on_conflict** (Boolean) Override the target element if already set.
-- **preserve_source** (Boolean) Remove or preserve the remapped source element.
-- **target_format** (String) If the `target_type` of the remapper is `attribute`, try to cast the value to a new specific type. If the cast is not possible, the original type is kept. `string`, `integer`, or `double` are the possible types. If the `target_type` is `tag`, this parameter may not be specified.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor
+- `override_on_conflict` (Boolean) Override the target element if already set.
+- `preserve_source` (Boolean) Remove or preserve the remapped source element.
+- `target_format` (String) If the `target_type` of the remapper is `attribute`, try to cast the value to a new specific type. If the cast is not possible, the original type is kept. `string`, `integer`, or `double` are the possible types. If the `target_type` is `tag`, this parameter may not be specified.
 
 
 <a id="nestedblock--processor--pipeline--processor--category_processor"></a>
@@ -434,28 +827,28 @@ Optional:
 
 Required:
 
-- **category** (Block List, Min: 1) List of filters to match or exclude a log with their corresponding name to assign a custom value to the log. (see [below for nested schema](#nestedblock--processor--pipeline--processor--category_processor--category))
-- **target** (String) Name of the target attribute whose value is defined by the matching category.
+- `category` (Block List, Min: 1) List of filters to match or exclude a log with their corresponding name to assign a custom value to the log. (see [below for nested schema](#nestedblock--processor--pipeline--processor--category_processor--category))
+- `target` (String) Name of the target attribute whose value is defined by the matching category.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the category
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the category
 
 <a id="nestedblock--processor--pipeline--processor--category_processor--category"></a>
 ### Nested Schema for `processor.pipeline.processor.category_processor.category`
 
 Required:
 
-- **filter** (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--pipeline--processor--category_processor--category--filter))
-- **name** (String)
+- `filter` (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--pipeline--processor--category_processor--category--filter))
+- `name` (String)
 
 <a id="nestedblock--processor--pipeline--processor--category_processor--category--filter"></a>
 ### Nested Schema for `processor.pipeline.processor.category_processor.category.filter`
 
 Required:
 
-- **query** (String) Filter criteria of the category.
+- `query` (String) Filter criteria of the category.
 
 
 
@@ -465,12 +858,41 @@ Required:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
+- `sources` (List of String) List of source attributes.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
+
+
+<a id="nestedblock--processor--pipeline--processor--decoder_processor"></a>
+### Nested Schema for `processor.pipeline.processor.decoder_processor`
+
+Required:
+
+- `binary_to_text_encoding` (String) Encoding type: base64 or base16
+- `input_representation` (String) Input representation: utf-8 or integer
+- `source` (String) Encoded message
+- `target` (String) Decoded message
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
+
+
+<a id="nestedblock--processor--pipeline--processor--exclude_attribute_processor"></a>
+### Nested Schema for `processor.pipeline.processor.exclude_attribute_processor`
+
+Required:
+
+- `attribute_to_exclude` (String) Name of the log attribute to remove from the log event.
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
 
 
 <a id="nestedblock--processor--pipeline--processor--geo_ip_parser"></a>
@@ -478,13 +900,13 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
-- **target** (String) Name of the parent attribute that contains all the extracted details from the sources.
+- `sources` (List of String) List of source attributes.
+- `target` (String) Name of the parent attribute that contains all the extracted details from the sources.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
 
 
 <a id="nestedblock--processor--pipeline--processor--grok_parser"></a>
@@ -492,22 +914,22 @@ Optional:
 
 Required:
 
-- **grok** (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--pipeline--processor--grok_parser--grok))
-- **source** (String) Name of the log attribute to parse.
+- `grok` (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--pipeline--processor--grok_parser--grok))
+- `source` (String) Name of the log attribute to parse.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor
-- **samples** (List of String) List of sample logs for this parser. It can save up to 5 samples. Each sample takes up to 5000 characters.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor
+- `samples` (List of String) List of sample logs for this parser. It can save up to 5 samples. Each sample takes up to 5000 characters.
 
 <a id="nestedblock--processor--pipeline--processor--grok_parser--grok"></a>
 ### Nested Schema for `processor.pipeline.processor.grok_parser.grok`
 
 Required:
 
-- **match_rules** (String) Match rules for your grok parser.
-- **support_rules** (String) Support rules for your grok parser.
+- `match_rules` (String) Match rules for your grok parser.
+- `support_rules` (String) Support rules for your grok parser.
 
 
 
@@ -516,15 +938,15 @@ Required:
 
 Required:
 
-- **lookup_table** (List of String) List of entries of the lookup table using `key,value` format.
-- **source** (String) Name of the source attribute used to do the lookup.
-- **target** (String) Name of the attribute that contains the result of the lookup.
+- `lookup_table` (List of String) List of entries of the lookup table using `key,value` format.
+- `source` (String) Name of the source attribute used to do the lookup.
+- `target` (String) Name of the attribute that contains the result of the lookup.
 
 Optional:
 
-- **default_lookup** (String) Default lookup value to use if there is no entry in the lookup table for the value of the source attribute.
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor
+- `default_lookup` (String) Default lookup value to use if there is no entry in the lookup table for the value of the source attribute.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor
 
 
 <a id="nestedblock--processor--pipeline--processor--message_remapper"></a>
@@ -532,12 +954,132 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
+- `sources` (List of String) List of source attributes.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
+
+
+<a id="nestedblock--processor--pipeline--processor--reference_table_lookup_processor"></a>
+### Nested Schema for `processor.pipeline.processor.reference_table_lookup_processor`
+
+Required:
+
+- `lookup_enrichment_table` (String) Name of the Reference Table for the source attribute and their associated target attribute values.
+- `source` (String) Name of the source attribute used to do the lookup.
+- `target` (String) Name of the attribute that contains the result of the lookup.
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor
+
+
+<a id="nestedblock--processor--pipeline--processor--schema_processor"></a>
+### Nested Schema for `processor.pipeline.processor.schema_processor`
+
+Required:
+
+- `mappers` (Block List, Min: 1) Array of mappers for the schema processor. (see [below for nested schema](#nestedblock--processor--pipeline--processor--schema_processor--mappers))
+- `schema` (Block List, Min: 1, Max: 1) Configuration of the schema data to use. (see [below for nested schema](#nestedblock--processor--pipeline--processor--schema_processor--schema))
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) The name of the processor.
+
+<a id="nestedblock--processor--pipeline--processor--schema_processor--mappers"></a>
+### Nested Schema for `processor.pipeline.processor.schema_processor.mappers`
+
+Optional:
+
+- `schema_category_mapper` (Block List) Mapper that categorizes log events into enum fields. In the case of OCSF, they can be used to map sibling fields which are composed of an ID and a name. (see [below for nested schema](#nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_category_mapper))
+- `schema_remapper` (Block List) Mapper that maps source log fields to their correct fields. (see [below for nested schema](#nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_remapper))
+
+<a id="nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_category_mapper"></a>
+### Nested Schema for `processor.pipeline.processor.schema_processor.mappers.schema_category_mapper`
+
+Required:
+
+- `categories` (Block List, Min: 1) Object describing the logs filter with corresponding category ID. (see [below for nested schema](#nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_category_mapper--categories))
+- `name` (String) Name of the logs schema category mapper.
+- `targets` (Block List, Min: 1, Max: 1) Name of the target attributes which value is defined by the matching. (see [below for nested schema](#nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_category_mapper--targets))
+
+Optional:
+
+- `fallback` (Block List, Max: 1) Used to override hardcoded category values with a value pulled from a source attribute on the log. (see [below for nested schema](#nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_category_mapper--fallback))
+
+<a id="nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_category_mapper--categories"></a>
+### Nested Schema for `processor.pipeline.processor.schema_processor.mappers.schema_category_mapper.categories`
+
+Required:
+
+- `filter` (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_category_mapper--categories--filter))
+- `id` (Number) ID to inject into the category.
+- `name` (String) Value to assign to target schema field.
+
+<a id="nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_category_mapper--categories--filter"></a>
+### Nested Schema for `processor.pipeline.processor.schema_processor.mappers.schema_category_mapper.categories.filter`
+
+Required:
+
+- `query` (String) Filter criteria of the category.
+
+
+
+<a id="nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_category_mapper--targets"></a>
+### Nested Schema for `processor.pipeline.processor.schema_processor.mappers.schema_category_mapper.targets`
+
+Optional:
+
+- `id` (String) ID of the field to map log attributes to
+- `name` (String) Name of the field to map log attributes to.
+
+
+<a id="nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_category_mapper--fallback"></a>
+### Nested Schema for `processor.pipeline.processor.schema_processor.mappers.schema_category_mapper.fallback`
+
+Optional:
+
+- `sources` (Map of String) Fallback sources used to populate value of field.
+- `values` (Map of String) Values that define when the fallback is used.
+
+
+
+<a id="nestedblock--processor--pipeline--processor--schema_processor--mappers--schema_remapper"></a>
+### Nested Schema for `processor.pipeline.processor.schema_processor.mappers.schema_remapper`
+
+Required:
+
+- `name` (String) Name of the logs schema remapper.
+- `sources` (List of String) Array of source attributes.
+- `target` (String) Target field to map log source field to
+
+Optional:
+
+- `override_on_conflict` (Boolean) Override or not the target element if already set.
+- `preserve_source` (Boolean) Remove or preserve the remapped source element.
+- `target_format` (String) If the `target_type` of the remapper is `attribute`, try to cast the value to a new specific type. If the cast is not possible, the original type is kept. `string`, `integer`, or `double` are the possible types. If the `target_type` is `tag`, this parameter may not be specified.
+
+
+
+<a id="nestedblock--processor--pipeline--processor--schema_processor--schema"></a>
+### Nested Schema for `processor.pipeline.processor.schema_processor.schema`
+
+Required:
+
+- `class_name` (String) Class name of the schema to use.
+- `class_uid` (Number) Class UID of the schema to use.
+- `schema_type` (String) Type of schema to use.
+- `version` (String) Version of the schema to use.
+
+Optional:
+
+- `extensions` (List of String) Optional list of extensions to modify the schema.
+- `profiles` (List of String) Optional list of profiles to modify the schema.
+
 
 
 <a id="nestedblock--processor--pipeline--processor--service_remapper"></a>
@@ -545,12 +1087,25 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
+- `sources` (List of String) List of source attributes.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
+
+
+<a id="nestedblock--processor--pipeline--processor--span_id_remapper"></a>
+### Nested Schema for `processor.pipeline.processor.span_id_remapper`
+
+Required:
+
+- `sources` (List of String) List of source attributes.
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
 
 
 <a id="nestedblock--processor--pipeline--processor--status_remapper"></a>
@@ -558,12 +1113,12 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
+- `sources` (List of String) List of source attributes.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
 
 
 <a id="nestedblock--processor--pipeline--processor--string_builder_processor"></a>
@@ -571,14 +1126,14 @@ Optional:
 
 Required:
 
-- **target** (String) The name of the attribute that contains the result of the template.
-- **template** (String) The formula with one or more attributes and raw text.
+- `target` (String) The name of the attribute that contains the result of the template.
+- `template` (String) The formula with one or more attributes and raw text.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **is_replace_missing** (Boolean) If it replaces all missing attributes of template by an empty string.
-- **name** (String) The name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `is_replace_missing` (Boolean) If it replaces all missing attributes of template by an empty string.
+- `name` (String) The name of the processor.
 
 
 <a id="nestedblock--processor--pipeline--processor--trace_id_remapper"></a>
@@ -586,12 +1141,12 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
+- `sources` (List of String) List of source attributes.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
 
 
 <a id="nestedblock--processor--pipeline--processor--url_parser"></a>
@@ -599,14 +1154,14 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
-- **target** (String) Name of the parent attribute that contains all the extracted details from the sources.
+- `sources` (List of String) List of source attributes.
+- `target` (String) Name of the parent attribute that contains all the extracted details from the sources.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor
-- **normalize_ending_slashes** (Boolean) Normalize the ending slashes or not.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor
+- `normalize_ending_slashes` (Boolean) Normalize the ending slashes or not.
 
 
 <a id="nestedblock--processor--pipeline--processor--user_agent_parser"></a>
@@ -614,15 +1169,135 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
-- **target** (String) Name of the parent attribute that contains all the extracted details from the sources.
+- `sources` (List of String) List of source attributes.
+- `target` (String) Name of the parent attribute that contains all the extracted details from the sources.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **is_encoded** (Boolean) If the source attribute is URL encoded or not.
-- **name** (String) Name of the processor
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `is_encoded` (Boolean) If the source attribute is URL encoded or not.
+- `name` (String) Name of the processor
 
+
+
+
+<a id="nestedblock--processor--reference_table_lookup_processor"></a>
+### Nested Schema for `processor.reference_table_lookup_processor`
+
+Required:
+
+- `lookup_enrichment_table` (String) Name of the Reference Table for the source attribute and their associated target attribute values.
+- `source` (String) Name of the source attribute used to do the lookup.
+- `target` (String) Name of the attribute that contains the result of the lookup.
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor
+
+
+<a id="nestedblock--processor--schema_processor"></a>
+### Nested Schema for `processor.schema_processor`
+
+Required:
+
+- `mappers` (Block List, Min: 1) Array of mappers for the schema processor. (see [below for nested schema](#nestedblock--processor--schema_processor--mappers))
+- `schema` (Block List, Min: 1, Max: 1) Configuration of the schema data to use. (see [below for nested schema](#nestedblock--processor--schema_processor--schema))
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) The name of the processor.
+
+<a id="nestedblock--processor--schema_processor--mappers"></a>
+### Nested Schema for `processor.schema_processor.mappers`
+
+Optional:
+
+- `schema_category_mapper` (Block List) Mapper that categorizes log events into enum fields. In the case of OCSF, they can be used to map sibling fields which are composed of an ID and a name. (see [below for nested schema](#nestedblock--processor--schema_processor--mappers--schema_category_mapper))
+- `schema_remapper` (Block List) Mapper that maps source log fields to their correct fields. (see [below for nested schema](#nestedblock--processor--schema_processor--mappers--schema_remapper))
+
+<a id="nestedblock--processor--schema_processor--mappers--schema_category_mapper"></a>
+### Nested Schema for `processor.schema_processor.mappers.schema_category_mapper`
+
+Required:
+
+- `categories` (Block List, Min: 1) Object describing the logs filter with corresponding category ID. (see [below for nested schema](#nestedblock--processor--schema_processor--mappers--schema_category_mapper--categories))
+- `name` (String) Name of the logs schema category mapper.
+- `targets` (Block List, Min: 1, Max: 1) Name of the target attributes which value is defined by the matching. (see [below for nested schema](#nestedblock--processor--schema_processor--mappers--schema_category_mapper--targets))
+
+Optional:
+
+- `fallback` (Block List, Max: 1) Used to override hardcoded category values with a value pulled from a source attribute on the log. (see [below for nested schema](#nestedblock--processor--schema_processor--mappers--schema_category_mapper--fallback))
+
+<a id="nestedblock--processor--schema_processor--mappers--schema_category_mapper--categories"></a>
+### Nested Schema for `processor.schema_processor.mappers.schema_category_mapper.categories`
+
+Required:
+
+- `filter` (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--processor--schema_processor--mappers--schema_category_mapper--categories--filter))
+- `id` (Number) ID to inject into the category.
+- `name` (String) Value to assign to target schema field.
+
+<a id="nestedblock--processor--schema_processor--mappers--schema_category_mapper--categories--filter"></a>
+### Nested Schema for `processor.schema_processor.mappers.schema_category_mapper.categories.filter`
+
+Required:
+
+- `query` (String) Filter criteria of the category.
+
+
+
+<a id="nestedblock--processor--schema_processor--mappers--schema_category_mapper--targets"></a>
+### Nested Schema for `processor.schema_processor.mappers.schema_category_mapper.targets`
+
+Optional:
+
+- `id` (String) ID of the field to map log attributes to
+- `name` (String) Name of the field to map log attributes to.
+
+
+<a id="nestedblock--processor--schema_processor--mappers--schema_category_mapper--fallback"></a>
+### Nested Schema for `processor.schema_processor.mappers.schema_category_mapper.fallback`
+
+Optional:
+
+- `sources` (Map of String) Fallback sources used to populate value of field.
+- `values` (Map of String) Values that define when the fallback is used.
+
+
+
+<a id="nestedblock--processor--schema_processor--mappers--schema_remapper"></a>
+### Nested Schema for `processor.schema_processor.mappers.schema_remapper`
+
+Required:
+
+- `name` (String) Name of the logs schema remapper.
+- `sources` (List of String) Array of source attributes.
+- `target` (String) Target field to map log source field to
+
+Optional:
+
+- `override_on_conflict` (Boolean) Override or not the target element if already set.
+- `preserve_source` (Boolean) Remove or preserve the remapped source element.
+- `target_format` (String) If the `target_type` of the remapper is `attribute`, try to cast the value to a new specific type. If the cast is not possible, the original type is kept. `string`, `integer`, or `double` are the possible types. If the `target_type` is `tag`, this parameter may not be specified.
+
+
+
+<a id="nestedblock--processor--schema_processor--schema"></a>
+### Nested Schema for `processor.schema_processor.schema`
+
+Required:
+
+- `class_name` (String) Class name of the schema to use.
+- `class_uid` (Number) Class UID of the schema to use.
+- `schema_type` (String) Type of schema to use.
+- `version` (String) Version of the schema to use.
+
+Optional:
+
+- `extensions` (List of String) Optional list of extensions to modify the schema.
+- `profiles` (List of String) Optional list of profiles to modify the schema.
 
 
 
@@ -631,12 +1306,25 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
+- `sources` (List of String) List of source attributes.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
+
+
+<a id="nestedblock--processor--span_id_remapper"></a>
+### Nested Schema for `processor.span_id_remapper`
+
+Required:
+
+- `sources` (List of String) List of source attributes.
+
+Optional:
+
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
 
 
 <a id="nestedblock--processor--status_remapper"></a>
@@ -644,12 +1332,12 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
+- `sources` (List of String) List of source attributes.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
 
 
 <a id="nestedblock--processor--string_builder_processor"></a>
@@ -657,14 +1345,14 @@ Optional:
 
 Required:
 
-- **target** (String) The name of the attribute that contains the result of the template.
-- **template** (String) The formula with one or more attributes and raw text.
+- `target` (String) The name of the attribute that contains the result of the template.
+- `template` (String) The formula with one or more attributes and raw text.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **is_replace_missing** (Boolean) If it replaces all missing attributes of template by an empty string.
-- **name** (String) The name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `is_replace_missing` (Boolean) If it replaces all missing attributes of template by an empty string.
+- `name` (String) The name of the processor.
 
 
 <a id="nestedblock--processor--trace_id_remapper"></a>
@@ -672,12 +1360,12 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
+- `sources` (List of String) List of source attributes.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor.
 
 
 <a id="nestedblock--processor--url_parser"></a>
@@ -685,14 +1373,14 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
-- **target** (String) Name of the parent attribute that contains all the extracted details from the sources.
+- `sources` (List of String) List of source attributes.
+- `target` (String) Name of the parent attribute that contains all the extracted details from the sources.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **name** (String) Name of the processor
-- **normalize_ending_slashes** (Boolean) Normalize the ending slashes or not.
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `name` (String) Name of the processor
+- `normalize_ending_slashes` (Boolean) Normalize the ending slashes or not.
 
 
 <a id="nestedblock--processor--user_agent_parser"></a>
@@ -700,18 +1388,20 @@ Optional:
 
 Required:
 
-- **sources** (List of String) List of source attributes.
-- **target** (String) Name of the parent attribute that contains all the extracted details from the sources.
+- `sources` (List of String) List of source attributes.
+- `target` (String) Name of the parent attribute that contains all the extracted details from the sources.
 
 Optional:
 
-- **is_enabled** (Boolean) If the processor is enabled or not.
-- **is_encoded** (Boolean) If the source attribute is URL encoded or not.
-- **name** (String) Name of the processor
+- `is_enabled` (Boolean) If the processor is enabled or not.
+- `is_encoded` (Boolean) If the source attribute is URL encoded or not.
+- `name` (String) Name of the processor
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 # To find the pipeline ID, click the "edit" button in the UI to open the pipeline details.

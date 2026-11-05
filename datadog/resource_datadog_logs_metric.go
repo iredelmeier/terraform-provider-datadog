@@ -7,7 +7,7 @@ import (
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/validators"
 
-	datadogV2 "github.com/DataDog/datadog-api-client-go/api/v2/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -22,80 +22,90 @@ func resourceDatadogLogsMetric() *schema.Resource {
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
-		Schema: map[string]*schema.Schema{
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"compute": {
+					Type:        schema.TypeList,
+					Required:    true,
+					ForceNew:    true,
+					Description: "The compute rule to compute the log-based metric. This field can't be updated after creation.",
+					MaxItems:    1,
+					Elem: &schema.Resource{
+						Schema: map[string]*schema.Schema{
 
-			"compute": {
-				Type:        schema.TypeList,
-				Required:    true,
-				ForceNew:    true,
-				Description: "The compute rule to compute the log-based metric. This field can't be updated after creation.",
-				MaxItems:    1,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
+							"aggregation_type": {
+								Type:             schema.TypeString,
+								Required:         true,
+								ForceNew:         true,
+								ValidateDiagFunc: validators.ValidateEnumValue(datadogV2.NewLogsMetricComputeAggregationTypeFromValue),
+								Description:      "The type of aggregation to use. This field can't be updated after creation.",
+							},
 
-						"aggregation_type": {
-							Type:             schema.TypeString,
-							Required:         true,
-							ForceNew:         true,
-							ValidateDiagFunc: validators.ValidateEnumValue(datadogV2.NewLogsMetricComputeAggregationTypeFromValue),
-							Description:      "The type of aggregation to use. This field can't be updated after creation.",
-						},
+							"path": {
+								Type:        schema.TypeString,
+								Optional:    true,
+								ForceNew:    true,
+								Description: "The path to the value the log-based metric will aggregate on (only used if the aggregation type is a \"distribution\"). This field can't be updated after creation.",
+							},
 
-						"path": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							ForceNew:    true,
-							Description: "The path to the value the log-based metric will aggregate on (only used if the aggregation type is a \"distribution\"). This field can't be updated after creation.",
-						},
-					},
-				},
-			},
-
-			"filter": {
-				Type:        schema.TypeList,
-				Required:    true,
-				Description: "The log-based metric filter. Logs matching this filter will be aggregated in this metric.",
-				MaxItems:    1,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-
-						"query": {
-							Type:        schema.TypeString,
-							Required:    true,
-							Description: "The search query - following the log search syntax.",
+							"include_percentiles": {
+								Description: "Toggle to include/exclude percentiles for a distribution metric. Defaults to false. Can only be applied to metrics that have an `aggregation_type` of distribution.",
+								Type:        schema.TypeBool,
+								Optional:    true,
+							},
 						},
 					},
 				},
-			},
 
-			"group_by": {
-				Type:        schema.TypeList,
-				Optional:    true,
-				Description: "The rules for the group by.",
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
+				"filter": {
+					Type:        schema.TypeList,
+					Required:    true,
+					Description: "The log-based metric filter. Logs matching this filter will be aggregated in this metric.",
+					MaxItems:    1,
+					Elem: &schema.Resource{
+						Schema: map[string]*schema.Schema{
 
-						"path": {
-							Type:        schema.TypeString,
-							Required:    true,
-							Description: "The path to the value the log-based metric will be aggregated over.",
-						},
-
-						"tag_name": {
-							Type:        schema.TypeString,
-							Required:    true,
-							Description: "Name of the tag that gets created.",
+							"query": {
+								Type:        schema.TypeString,
+								Required:    true,
+								Description: "The search query - following the log search syntax.",
+							},
 						},
 					},
 				},
-			},
 
-			"name": {
-				Type:        schema.TypeString,
-				Required:    true,
-				ForceNew:    true,
-				Description: "The name of the log-based metric. This field can't be updated after creation.",
-			},
+				"group_by": {
+					Type:        schema.TypeSet,
+					Optional:    true,
+					Description: "The rules for the group by.",
+					Elem: &schema.Resource{
+						Schema: map[string]*schema.Schema{
+
+							"path": {
+								Type:        schema.TypeString,
+								Required:    true,
+								Description: "The path to the value the log-based metric will be aggregated over.",
+							},
+
+							"tag_name": {
+								Type:        schema.TypeString,
+								Required:    true,
+								Description: "Name of the tag that gets created.",
+							},
+						},
+					},
+				},
+
+				"name": {
+					Type:        schema.TypeString,
+					Required:    true,
+					ForceNew:    true,
+					Description: "The name of the log-based metric. This field can't be updated after creation.",
+					StateFunc: func(val any) string {
+						return utils.NormMetricNameParse(val.(string))
+					},
+				},
+			}
 		},
 	}
 }
@@ -133,15 +143,36 @@ func getCompute(d *schema.ResourceData) (*datadogV2.LogsMetricCompute, error) {
 	compute := datadogV2.NewLogsMetricComputeWithDefaults()
 
 	if aggregationType, ok := resourceCompute["aggregation_type"]; ok {
-		compute.SetAggregationType(datadogV2.LogsMetricComputeAggregationType(aggregationType.(string)))
+		aggregation_type := datadogV2.LogsMetricComputeAggregationType(aggregationType.(string))
+		compute.SetAggregationType(aggregation_type)
+		if aggregation_type == datadogV2.LOGSMETRICCOMPUTEAGGREGATIONTYPE_DISTRIBUTION {
+			if includePercentiles, ok := resourceCompute["include_percentiles"]; ok {
+				compute.SetIncludePercentiles(includePercentiles.(bool))
+			}
+		}
 	}
 
-	path, ok := resourceCompute["path"]
-	if ok && path != "" {
+	if path, ok := resourceCompute["path"]; ok && path != "" {
 		compute.SetPath(path.(string))
 	}
 
 	return compute, nil
+}
+
+func getUpdateCompute(d *schema.ResourceData) (*datadogV2.LogsMetricUpdateCompute, error) {
+	resourceCompute := d.Get("compute").([]interface{})[0].(map[string]interface{})
+	updateCompute := datadogV2.NewLogsMetricUpdateComputeWithDefaults()
+
+	if aggregationType, ok := resourceCompute["aggregation_type"]; ok {
+		aggregation_type := datadogV2.LogsMetricComputeAggregationType(aggregationType.(string))
+		if aggregation_type == datadogV2.LOGSMETRICCOMPUTEAGGREGATIONTYPE_DISTRIBUTION {
+			if includePercentiles, ok := resourceCompute["include_percentiles"]; ok {
+				updateCompute.SetIncludePercentiles(includePercentiles.(bool))
+			}
+		}
+	}
+
+	return updateCompute, nil
 }
 
 func getFilter(d *schema.ResourceData) (*datadogV2.LogsMetricFilter, error) {
@@ -156,10 +187,12 @@ func getFilter(d *schema.ResourceData) (*datadogV2.LogsMetricFilter, error) {
 }
 
 func getGroupBys(d *schema.ResourceData) ([]datadogV2.LogsMetricGroupBy, error) {
-	resourceGroupBys := d.Get("group_by").([]interface{})
+	resourceGroupBys := d.Get("group_by").(*schema.Set).List()
 	groupBys := make([]datadogV2.LogsMetricGroupBy, len(resourceGroupBys))
-
 	for i, v := range resourceGroupBys {
+		if v == nil {
+			continue
+		}
 		resourceGroupBy := v.(map[string]interface{})
 		groupBy := datadogV2.NewLogsMetricGroupByWithDefaults()
 		if path, ok := resourceGroupBy["path"]; ok {
@@ -176,8 +209,8 @@ func getGroupBys(d *schema.ResourceData) ([]datadogV2.LogsMetricGroupBy, error) 
 
 func resourceDatadogLogsMetricCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV2
-	auth := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	resultLogsMetricCreateData, err := buildDatadogLogsMetric(d)
 	if err != nil {
@@ -187,7 +220,7 @@ func resourceDatadogLogsMetricCreate(ctx context.Context, d *schema.ResourceData
 	ddObject := datadogV2.NewLogsMetricCreateRequestWithDefaults()
 	ddObject.SetData(*resultLogsMetricCreateData)
 
-	response, httpResponse, err := datadogClient.LogsMetricsApi.CreateLogsMetric(auth, *ddObject)
+	response, httpResponse, err := apiInstances.GetLogsMetricsApiV2().CreateLogsMetric(auth, *ddObject)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error creating LogsMetric")
 	}
@@ -204,8 +237,14 @@ func updateLogsMetricState(d *schema.ResourceData, resource *datadogV2.LogsMetri
 	if ddAttributes, ok := resource.GetAttributesOk(); ok {
 		if computeDDModel, ok := ddAttributes.GetComputeOk(); ok {
 			computeMap := map[string]interface{}{}
+
 			if v, ok := computeDDModel.GetAggregationTypeOk(); ok {
 				computeMap["aggregation_type"] = *v
+				if *v == datadogV2.LOGSMETRICRESPONSECOMPUTEAGGREGATIONTYPE_DISTRIBUTION {
+					if w, ok := computeDDModel.GetIncludePercentilesOk(); ok {
+						computeMap["include_percentiles"] = *w
+					}
+				}
 			}
 			if v, ok := computeDDModel.GetPathOk(); ok {
 				computeMap["path"] = *v
@@ -254,13 +293,13 @@ func updateLogsMetricState(d *schema.ResourceData, resource *datadogV2.LogsMetri
 
 func resourceDatadogLogsMetricRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV2
-	auth := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 	var err error
 
 	id := d.Id()
 
-	resourceLogsMetricResponse, httpResp, err := datadogClient.LogsMetricsApi.GetLogsMetric(auth, id)
+	resourceLogsMetricResponse, httpResp, err := apiInstances.GetLogsMetricsApiV2().GetLogsMetric(auth, id)
 
 	if err != nil {
 		if httpResp != nil && httpResp.StatusCode == 404 {
@@ -282,6 +321,12 @@ func buildDatadogLogsMetricUpdate(d *schema.ResourceData) (*datadogV2.LogsMetric
 	result := datadogV2.NewLogsMetricUpdateDataWithDefaults()
 	attributes := datadogV2.NewLogsMetricUpdateAttributesWithDefaults()
 
+	updateCompute, err := getUpdateCompute(d)
+	if err != nil {
+		return nil, err
+	}
+	attributes.SetCompute(*updateCompute)
+
 	filter, err := getFilter(d)
 	if err != nil {
 		return nil, err
@@ -301,8 +346,8 @@ func buildDatadogLogsMetricUpdate(d *schema.ResourceData) (*datadogV2.LogsMetric
 
 func resourceDatadogLogsMetricUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV2
-	auth := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	resultLogsMetricUpdateData, err := buildDatadogLogsMetricUpdate(d)
 	if err != nil {
@@ -313,7 +358,7 @@ func resourceDatadogLogsMetricUpdate(ctx context.Context, d *schema.ResourceData
 	ddObject.SetData(*resultLogsMetricUpdateData)
 	id := d.Id()
 
-	response, httpResponse, err := datadogClient.LogsMetricsApi.UpdateLogsMetric(auth, id, *ddObject)
+	response, httpResponse, err := apiInstances.GetLogsMetricsApiV2().UpdateLogsMetric(auth, id, *ddObject)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error updating LogsMetric")
 	}
@@ -326,13 +371,13 @@ func resourceDatadogLogsMetricUpdate(ctx context.Context, d *schema.ResourceData
 
 func resourceDatadogLogsMetricDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV2
-	auth := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 	var err error
 
 	id := d.Id()
 
-	httpResponse, err := datadogClient.LogsMetricsApi.DeleteLogsMetric(auth, id)
+	httpResponse, err := apiInstances.GetLogsMetricsApiV2().DeleteLogsMetric(auth, id)
 
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error deleting LogsMetric")

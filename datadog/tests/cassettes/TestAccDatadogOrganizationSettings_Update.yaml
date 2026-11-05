@@ -1,430 +1,677 @@
 ---
-version: 1
+version: 2
 interactions:
-- request:
-    body: ""
-    form: {}
-    headers:
-      Accept:
-      - application/json
-      Dd-Operation-Id:
-      - ListOrgs
-      User-Agent:
-      - terraform-provider-datadog/dev (terraform 2.7.0; terraform-cli 1.0.4) datadog-api-client-go/1.2.1+dev (go go1.16.6; os darwin; arch amd64)
-    url: https://api.datadoghq.com/api/v1/org
-    method: GET
-  response:
-    body: '{"orgs":[{"public_id":"8bc512dc-f4e7-11eb-b98d-da7ad0900002","name":"ttings_Update-local-1628236083-2","billing":{"type":"parent_billing"},"created":"2021-08-04 05:48:08","description":null,"settings":{"saml_idp_metadata_valid_until":null,"saml_autocreate_access_role":"st","private_widget_share":true,"saml_idp_endpoint":null,"saml_idp_metadata_uploaded":false,"saml_can_be_enabled":false,"saml":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_users_domains":{"domains":["example.com","www.example.com"],"enabled":true},"saml_idp_initiated_login":{"enabled":false},"saml_login_url":null},"subscription":{"started":1628056089,"finished":null,"is_custom":false,"is_expired":true,"billing_plan_id":2,"is_trial":false,"expires":null,"type":"pro","id":785813}}]}'
-    headers:
-      Cache-Control:
-      - no-cache
-      Connection:
-      - keep-alive
-      Content-Security-Policy:
-      - frame-ancestors 'self'; report-uri https://api.datadoghq.com/csp-report
-      Content-Type:
-      - application/json
-      Date:
-      - Fri, 06 Aug 2021 07:48:41 GMT
-      Pragma:
-      - no-cache
-      Strict-Transport-Security:
-      - max-age=15724800;
-      Vary:
-      - Accept-Encoding
-      X-Content-Type-Options:
-      - nosniff
-      X-Frame-Options:
-      - SAMEORIGIN
-    status: 200 OK
-    code: 200
-    duration: ""
-- request:
-    body: |
-      {"name":"ttings_Update-local-1628236119","settings":{"private_widget_share":false,"saml":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"domains":[],"enabled":false},"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false}}}
-    form: {}
-    headers:
-      Accept:
-      - application/json
-      Content-Type:
-      - application/json
-      Dd-Operation-Id:
-      - UpdateOrg
-      User-Agent:
-      - terraform-provider-datadog/dev (terraform 2.7.0; terraform-cli 1.0.4) datadog-api-client-go/1.2.1+dev (go go1.16.6; os darwin; arch amd64)
-    url: https://api.datadoghq.com/api/v1/org/8bc512dc-f4e7-11eb-b98d-da7ad0900002
-    method: PUT
-  response:
-    body: '{"org":{"public_id":"8bc512dc-f4e7-11eb-b98d-da7ad0900002","name":"ttings_Update-local-1628236119","billing":{"type":"parent_billing"},"created":"2021-08-04 05:48:08","description":null,"settings":{"saml_idp_metadata_valid_until":null,"saml_autocreate_access_role":"st","private_widget_share":false,"saml_idp_endpoint":null,"saml_idp_metadata_uploaded":false,"saml_can_be_enabled":false,"saml":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_users_domains":{"domains":[],"enabled":false},"saml_idp_initiated_login":{"enabled":false},"saml_login_url":null},"subscription":{"started":1628056089,"finished":null,"is_custom":false,"is_expired":true,"billing_plan_id":2,"is_trial":false,"expires":null,"type":"pro","id":785813}}}'
-    headers:
-      Cache-Control:
-      - no-cache
-      Connection:
-      - keep-alive
-      Content-Security-Policy:
-      - frame-ancestors 'self'; report-uri https://api.datadoghq.com/csp-report
-      Content-Type:
-      - application/json
-      Date:
-      - Fri, 06 Aug 2021 07:48:42 GMT
-      Pragma:
-      - no-cache
-      Strict-Transport-Security:
-      - max-age=15724800;
-      Vary:
-      - Accept-Encoding
-      X-Content-Type-Options:
-      - nosniff
-      X-Frame-Options:
-      - SAMEORIGIN
-    status: 200 OK
-    code: 200
-    duration: ""
-- request:
-    body: ""
-    form: {}
-    headers:
-      Accept:
-      - application/json
-      Dd-Operation-Id:
-      - GetOrg
-      User-Agent:
-      - terraform-provider-datadog/dev (terraform 2.7.0; terraform-cli 1.0.4) datadog-api-client-go/1.2.1+dev (go go1.16.6; os darwin; arch amd64)
-    url: https://api.datadoghq.com/api/v1/org/8bc512dc-f4e7-11eb-b98d-da7ad0900002
-    method: GET
-  response:
-    body: '{"org":{"public_id":"8bc512dc-f4e7-11eb-b98d-da7ad0900002","name":"ttings_Update-local-1628236119","billing":{"type":"parent_billing"},"created":"2021-08-04 05:48:08","description":null,"settings":{"saml_idp_metadata_valid_until":null,"saml_autocreate_access_role":"st","private_widget_share":false,"saml_idp_endpoint":null,"saml_idp_metadata_uploaded":false,"saml_can_be_enabled":false,"saml":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_users_domains":{"domains":[],"enabled":false},"saml_idp_initiated_login":{"enabled":false},"saml_login_url":null},"subscription":{"started":1628056089,"finished":null,"is_custom":false,"is_expired":true,"billing_plan_id":2,"is_trial":false,"expires":null,"type":"pro","id":785813}}}'
-    headers:
-      Cache-Control:
-      - no-cache
-      Connection:
-      - keep-alive
-      Content-Security-Policy:
-      - frame-ancestors 'self'; report-uri https://api.datadoghq.com/csp-report
-      Content-Type:
-      - application/json
-      Date:
-      - Fri, 06 Aug 2021 07:48:42 GMT
-      Pragma:
-      - no-cache
-      Strict-Transport-Security:
-      - max-age=15724800;
-      Vary:
-      - Accept-Encoding
-      X-Content-Type-Options:
-      - nosniff
-      X-Frame-Options:
-      - SAMEORIGIN
-    status: 200 OK
-    code: 200
-    duration: ""
-- request:
-    body: ""
-    form: {}
-    headers:
-      Accept:
-      - application/json
-      Dd-Operation-Id:
-      - GetOrg
-      User-Agent:
-      - terraform-provider-datadog/dev (terraform 2.7.0; terraform-cli 1.0.4) datadog-api-client-go/1.2.1+dev (go go1.16.6; os darwin; arch amd64)
-    url: https://api.datadoghq.com/api/v1/org/8bc512dc-f4e7-11eb-b98d-da7ad0900002
-    method: GET
-  response:
-    body: '{"org":{"public_id":"8bc512dc-f4e7-11eb-b98d-da7ad0900002","name":"ttings_Update-local-1628236119","billing":{"type":"parent_billing"},"created":"2021-08-04 05:48:08","description":null,"settings":{"saml_idp_metadata_valid_until":null,"saml_autocreate_access_role":"st","private_widget_share":false,"saml_idp_endpoint":null,"saml_idp_metadata_uploaded":false,"saml_can_be_enabled":false,"saml":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_users_domains":{"domains":[],"enabled":false},"saml_idp_initiated_login":{"enabled":false},"saml_login_url":null},"subscription":{"started":1628056089,"finished":null,"is_custom":false,"is_expired":true,"billing_plan_id":2,"is_trial":false,"expires":null,"type":"pro","id":785813}}}'
-    headers:
-      Cache-Control:
-      - no-cache
-      Connection:
-      - keep-alive
-      Content-Security-Policy:
-      - frame-ancestors 'self'; report-uri https://api.datadoghq.com/csp-report
-      Content-Type:
-      - application/json
-      Date:
-      - Fri, 06 Aug 2021 07:48:43 GMT
-      Pragma:
-      - no-cache
-      Strict-Transport-Security:
-      - max-age=15724800;
-      Vary:
-      - Accept-Encoding
-      X-Content-Type-Options:
-      - nosniff
-      X-Frame-Options:
-      - SAMEORIGIN
-    status: 200 OK
-    code: 200
-    duration: ""
-- request:
-    body: ""
-    form: {}
-    headers:
-      Accept:
-      - application/json
-      Dd-Operation-Id:
-      - GetOrg
-      User-Agent:
-      - terraform-provider-datadog/dev (terraform 2.7.0; terraform-cli 1.0.4) datadog-api-client-go/1.2.1+dev (go go1.16.6; os darwin; arch amd64)
-    url: https://api.datadoghq.com/api/v1/org/8bc512dc-f4e7-11eb-b98d-da7ad0900002
-    method: GET
-  response:
-    body: '{"org":{"public_id":"8bc512dc-f4e7-11eb-b98d-da7ad0900002","name":"ttings_Update-local-1628236119","billing":{"type":"parent_billing"},"created":"2021-08-04 05:48:08","description":null,"settings":{"saml_idp_metadata_valid_until":null,"saml_autocreate_access_role":"st","private_widget_share":false,"saml_idp_endpoint":null,"saml_idp_metadata_uploaded":false,"saml_can_be_enabled":false,"saml":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_users_domains":{"domains":[],"enabled":false},"saml_idp_initiated_login":{"enabled":false},"saml_login_url":null},"subscription":{"started":1628056089,"finished":null,"is_custom":false,"is_expired":true,"billing_plan_id":2,"is_trial":false,"expires":null,"type":"pro","id":785813}}}'
-    headers:
-      Cache-Control:
-      - no-cache
-      Connection:
-      - keep-alive
-      Content-Security-Policy:
-      - frame-ancestors 'self'; report-uri https://api.datadoghq.com/csp-report
-      Content-Type:
-      - application/json
-      Date:
-      - Fri, 06 Aug 2021 07:48:44 GMT
-      Pragma:
-      - no-cache
-      Strict-Transport-Security:
-      - max-age=15724800;
-      Vary:
-      - Accept-Encoding
-      X-Content-Type-Options:
-      - nosniff
-      X-Frame-Options:
-      - SAMEORIGIN
-    status: 200 OK
-    code: 200
-    duration: ""
-- request:
-    body: ""
-    form: {}
-    headers:
-      Accept:
-      - application/json
-      Dd-Operation-Id:
-      - GetOrg
-      User-Agent:
-      - terraform-provider-datadog/dev (terraform 2.7.0; terraform-cli 1.0.4) datadog-api-client-go/1.2.1+dev (go go1.16.6; os darwin; arch amd64)
-    url: https://api.datadoghq.com/api/v1/org/8bc512dc-f4e7-11eb-b98d-da7ad0900002
-    method: GET
-  response:
-    body: '{"org":{"public_id":"8bc512dc-f4e7-11eb-b98d-da7ad0900002","name":"ttings_Update-local-1628236119","billing":{"type":"parent_billing"},"created":"2021-08-04 05:48:08","description":null,"settings":{"saml_idp_metadata_valid_until":null,"saml_autocreate_access_role":"st","private_widget_share":false,"saml_idp_endpoint":null,"saml_idp_metadata_uploaded":false,"saml_can_be_enabled":false,"saml":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_users_domains":{"domains":[],"enabled":false},"saml_idp_initiated_login":{"enabled":false},"saml_login_url":null},"subscription":{"started":1628056089,"finished":null,"is_custom":false,"is_expired":true,"billing_plan_id":2,"is_trial":false,"expires":null,"type":"pro","id":785813}}}'
-    headers:
-      Cache-Control:
-      - no-cache
-      Connection:
-      - keep-alive
-      Content-Security-Policy:
-      - frame-ancestors 'self'; report-uri https://api.datadoghq.com/csp-report
-      Content-Type:
-      - application/json
-      Date:
-      - Fri, 06 Aug 2021 07:48:45 GMT
-      Pragma:
-      - no-cache
-      Strict-Transport-Security:
-      - max-age=15724800;
-      Vary:
-      - Accept-Encoding
-      X-Content-Type-Options:
-      - nosniff
-      X-Frame-Options:
-      - SAMEORIGIN
-    status: 200 OK
-    code: 200
-    duration: ""
-- request:
-    body: |
-      {"name":"ttings_Update-local-1628236119","settings":{"private_widget_share":true,"saml":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"domains":["example.com","www.example.com"],"enabled":true},"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false}}}
-    form: {}
-    headers:
-      Accept:
-      - application/json
-      Content-Type:
-      - application/json
-      Dd-Operation-Id:
-      - UpdateOrg
-      User-Agent:
-      - terraform-provider-datadog/dev (terraform 2.7.0; terraform-cli 1.0.4) datadog-api-client-go/1.2.1+dev (go go1.16.6; os darwin; arch amd64)
-    url: https://api.datadoghq.com/api/v1/org/8bc512dc-f4e7-11eb-b98d-da7ad0900002
-    method: PUT
-  response:
-    body: '{"org":{"public_id":"8bc512dc-f4e7-11eb-b98d-da7ad0900002","name":"ttings_Update-local-1628236119","billing":{"type":"parent_billing"},"created":"2021-08-04 05:48:08","description":null,"settings":{"saml_idp_metadata_valid_until":null,"saml_autocreate_access_role":"st","private_widget_share":true,"saml_idp_endpoint":null,"saml_idp_metadata_uploaded":false,"saml_can_be_enabled":false,"saml":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_users_domains":{"domains":["example.com","www.example.com"],"enabled":true},"saml_idp_initiated_login":{"enabled":false},"saml_login_url":null},"subscription":{"started":1628056089,"finished":null,"is_custom":false,"is_expired":true,"billing_plan_id":2,"is_trial":false,"expires":null,"type":"pro","id":785813}}}'
-    headers:
-      Cache-Control:
-      - no-cache
-      Connection:
-      - keep-alive
-      Content-Security-Policy:
-      - frame-ancestors 'self'; report-uri https://api.datadoghq.com/csp-report
-      Content-Type:
-      - application/json
-      Date:
-      - Fri, 06 Aug 2021 07:48:46 GMT
-      Pragma:
-      - no-cache
-      Strict-Transport-Security:
-      - max-age=15724800;
-      Vary:
-      - Accept-Encoding
-      X-Content-Type-Options:
-      - nosniff
-      X-Frame-Options:
-      - SAMEORIGIN
-    status: 200 OK
-    code: 200
-    duration: ""
-- request:
-    body: ""
-    form: {}
-    headers:
-      Accept:
-      - application/json
-      Dd-Operation-Id:
-      - GetOrg
-      User-Agent:
-      - terraform-provider-datadog/dev (terraform 2.7.0; terraform-cli 1.0.4) datadog-api-client-go/1.2.1+dev (go go1.16.6; os darwin; arch amd64)
-    url: https://api.datadoghq.com/api/v1/org/8bc512dc-f4e7-11eb-b98d-da7ad0900002
-    method: GET
-  response:
-    body: '{"org":{"public_id":"8bc512dc-f4e7-11eb-b98d-da7ad0900002","name":"ttings_Update-local-1628236119","billing":{"type":"parent_billing"},"created":"2021-08-04 05:48:08","description":null,"settings":{"saml_idp_metadata_valid_until":null,"saml_autocreate_access_role":"st","private_widget_share":true,"saml_idp_endpoint":null,"saml_idp_metadata_uploaded":false,"saml_can_be_enabled":false,"saml":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_users_domains":{"domains":["example.com","www.example.com"],"enabled":true},"saml_idp_initiated_login":{"enabled":false},"saml_login_url":null},"subscription":{"started":1628056089,"finished":null,"is_custom":false,"is_expired":true,"billing_plan_id":2,"is_trial":false,"expires":null,"type":"pro","id":785813}}}'
-    headers:
-      Cache-Control:
-      - no-cache
-      Connection:
-      - keep-alive
-      Content-Security-Policy:
-      - frame-ancestors 'self'; report-uri https://api.datadoghq.com/csp-report
-      Content-Type:
-      - application/json
-      Date:
-      - Fri, 06 Aug 2021 07:48:47 GMT
-      Pragma:
-      - no-cache
-      Strict-Transport-Security:
-      - max-age=15724800;
-      Vary:
-      - Accept-Encoding
-      X-Content-Type-Options:
-      - nosniff
-      X-Frame-Options:
-      - SAMEORIGIN
-    status: 200 OK
-    code: 200
-    duration: ""
-- request:
-    body: ""
-    form: {}
-    headers:
-      Accept:
-      - application/json
-      Dd-Operation-Id:
-      - GetOrg
-      User-Agent:
-      - terraform-provider-datadog/dev (terraform 2.7.0; terraform-cli 1.0.4) datadog-api-client-go/1.2.1+dev (go go1.16.6; os darwin; arch amd64)
-    url: https://api.datadoghq.com/api/v1/org/8bc512dc-f4e7-11eb-b98d-da7ad0900002
-    method: GET
-  response:
-    body: '{"org":{"public_id":"8bc512dc-f4e7-11eb-b98d-da7ad0900002","name":"ttings_Update-local-1628236119","billing":{"type":"parent_billing"},"created":"2021-08-04 05:48:08","description":null,"settings":{"saml_idp_metadata_valid_until":null,"saml_autocreate_access_role":"st","private_widget_share":true,"saml_idp_endpoint":null,"saml_idp_metadata_uploaded":false,"saml_can_be_enabled":false,"saml":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_users_domains":{"domains":["example.com","www.example.com"],"enabled":true},"saml_idp_initiated_login":{"enabled":false},"saml_login_url":null},"subscription":{"started":1628056089,"finished":null,"is_custom":false,"is_expired":true,"billing_plan_id":2,"is_trial":false,"expires":null,"type":"pro","id":785813}}}'
-    headers:
-      Cache-Control:
-      - no-cache
-      Connection:
-      - keep-alive
-      Content-Security-Policy:
-      - frame-ancestors 'self'; report-uri https://api.datadoghq.com/csp-report
-      Content-Type:
-      - application/json
-      Date:
-      - Fri, 06 Aug 2021 07:48:48 GMT
-      Pragma:
-      - no-cache
-      Strict-Transport-Security:
-      - max-age=15724800;
-      Vary:
-      - Accept-Encoding
-      X-Content-Type-Options:
-      - nosniff
-      X-Frame-Options:
-      - SAMEORIGIN
-    status: 200 OK
-    code: 200
-    duration: ""
-- request:
-    body: |
-      {"name":"ttings_Update-local-1628236119-2","settings":{"private_widget_share":true,"saml":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"domains":["example.com","www.example.com"],"enabled":true},"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false}}}
-    form: {}
-    headers:
-      Accept:
-      - application/json
-      Content-Type:
-      - application/json
-      Dd-Operation-Id:
-      - UpdateOrg
-      User-Agent:
-      - terraform-provider-datadog/dev (terraform 2.7.0; terraform-cli 1.0.4) datadog-api-client-go/1.2.1+dev (go go1.16.6; os darwin; arch amd64)
-    url: https://api.datadoghq.com/api/v1/org/8bc512dc-f4e7-11eb-b98d-da7ad0900002
-    method: PUT
-  response:
-    body: '{"org":{"public_id":"8bc512dc-f4e7-11eb-b98d-da7ad0900002","name":"ttings_Update-local-1628236119-2","billing":{"type":"parent_billing"},"created":"2021-08-04 05:48:08","description":null,"settings":{"saml_idp_metadata_valid_until":null,"saml_autocreate_access_role":"st","private_widget_share":true,"saml_idp_endpoint":null,"saml_idp_metadata_uploaded":false,"saml_can_be_enabled":false,"saml":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_users_domains":{"domains":["example.com","www.example.com"],"enabled":true},"saml_idp_initiated_login":{"enabled":false},"saml_login_url":null},"subscription":{"started":1628056089,"finished":null,"is_custom":false,"is_expired":true,"billing_plan_id":2,"is_trial":false,"expires":null,"type":"pro","id":785813}}}'
-    headers:
-      Cache-Control:
-      - no-cache
-      Connection:
-      - keep-alive
-      Content-Security-Policy:
-      - frame-ancestors 'self'; report-uri https://api.datadoghq.com/csp-report
-      Content-Type:
-      - application/json
-      Date:
-      - Fri, 06 Aug 2021 07:48:48 GMT
-      Pragma:
-      - no-cache
-      Strict-Transport-Security:
-      - max-age=15724800;
-      Vary:
-      - Accept-Encoding
-      X-Content-Type-Options:
-      - nosniff
-      X-Frame-Options:
-      - SAMEORIGIN
-    status: 200 OK
-    code: 200
-    duration: ""
-- request:
-    body: ""
-    form: {}
-    headers:
-      Accept:
-      - application/json
-      Dd-Operation-Id:
-      - GetOrg
-      User-Agent:
-      - terraform-provider-datadog/dev (terraform 2.7.0; terraform-cli 1.0.4) datadog-api-client-go/1.2.1+dev (go go1.16.6; os darwin; arch amd64)
-    url: https://api.datadoghq.com/api/v1/org/8bc512dc-f4e7-11eb-b98d-da7ad0900002
-    method: GET
-  response:
-    body: '{"org":{"public_id":"8bc512dc-f4e7-11eb-b98d-da7ad0900002","name":"ttings_Update-local-1628236119-2","billing":{"type":"parent_billing"},"created":"2021-08-04 05:48:08","description":null,"settings":{"saml_idp_metadata_valid_until":null,"saml_autocreate_access_role":"st","private_widget_share":true,"saml_idp_endpoint":null,"saml_idp_metadata_uploaded":false,"saml_can_be_enabled":false,"saml":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_users_domains":{"domains":["example.com","www.example.com"],"enabled":true},"saml_idp_initiated_login":{"enabled":false},"saml_login_url":null},"subscription":{"started":1628056089,"finished":null,"is_custom":false,"is_expired":true,"billing_plan_id":2,"is_trial":false,"expires":null,"type":"pro","id":785813}}}'
-    headers:
-      Cache-Control:
-      - no-cache
-      Connection:
-      - keep-alive
-      Content-Security-Policy:
-      - frame-ancestors 'self'; report-uri https://api.datadoghq.com/csp-report
-      Content-Type:
-      - application/json
-      Date:
-      - Fri, 06 Aug 2021 07:48:49 GMT
-      Pragma:
-      - no-cache
-      Strict-Transport-Security:
-      - max-age=15724800;
-      Vary:
-      - Accept-Encoding
-      X-Content-Type-Options:
-      - nosniff
-      X-Frame-Options:
-      - SAMEORIGIN
-    status: 200 OK
-    code: 200
-    duration: ""
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v1/org
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"orgs":[{"public_id":"fasjyydbcgwwc2uc","name":"DD Integration Tests (321813)","description":null,"created":"2019-08-13 19:50:19","subscription":{"id":null,"billing_plan_id":8,"started":1565726073,"expires":null,"finished":null,"type":"dogfood","is_custom":false,"is_trial":false,"is_expired":true},"billing":{"type":"parent_billing"},"settings":{"default_landing_page":"APM Home","saml":{"enabled":false},"saml_can_be_enabled":true,"saml_login_url":null,"saml_idp_metadata_uploaded":true,"saml_idp_endpoint":"http://localhost:8088/sso/post","saml_idp_metadata_valid_until":null,"custom_landing_page":null,"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"enabled":false,"domains":[]},"private_widget_share":false,"manage_reports":"false"}}]}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 336.760583ms
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 255
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: |
+            {"name":"tf-plugin-test-update-784646869","settings":{"private_widget_share":false,"saml":{"enabled":false},"saml_autocreate_users_domains":{"domains":[],"enabled":false},"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false}}}
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+        url: https://api.datadoghq.com/api/v1/org/fasjyydbcgwwc2uc
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"org":{"public_id":"fasjyydbcgwwc2uc","name":"tf-plugin-test-update-784646869","description":null,"created":"2019-08-13 19:50:19","subscription":{"id":null,"billing_plan_id":8,"started":1565726073,"expires":null,"finished":null,"type":"dogfood","is_custom":false,"is_trial":false,"is_expired":true},"billing":{"type":"parent_billing"},"settings":{"default_landing_page":"APM Home","saml":{"enabled":false},"saml_can_be_enabled":true,"saml_login_url":null,"saml_idp_metadata_uploaded":true,"saml_idp_endpoint":"http://localhost:8088/sso/post","saml_idp_metadata_valid_until":null,"custom_landing_page":null,"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"enabled":false,"domains":[]},"private_widget_share":false,"manage_reports":"false"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 633.945625ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/org_configs/security_contacts
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"data":{"type":"org_configs","id":"19f80517-ad4d-5390-942a-d24529f30ffe","attributes":{"name":"security_contacts","description":"List of emails for security event notifications of an organization","value_type":"security_contacts_list","value":[],"modified_at":"2026-07-21T12:27:54.065443+00:00"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 156.264167ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v1/org/fasjyydbcgwwc2uc
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"org":{"public_id":"fasjyydbcgwwc2uc","name":"tf-plugin-test-update-784646869","description":null,"created":"2019-08-13 19:50:19","subscription":{"id":null,"billing_plan_id":8,"started":1565726073,"expires":null,"finished":null,"type":"dogfood","is_custom":false,"is_trial":false,"is_expired":true},"billing":{"type":"parent_billing"},"settings":{"default_landing_page":"APM Home","saml":{"enabled":false},"saml_can_be_enabled":true,"saml_login_url":null,"saml_idp_metadata_uploaded":true,"saml_idp_endpoint":"http://localhost:8088/sso/post","saml_idp_metadata_valid_until":null,"custom_landing_page":null,"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"enabled":false,"domains":[]},"private_widget_share":false,"manage_reports":"false"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 358.410333ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/org_configs/security_contacts
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"data":{"type":"org_configs","id":"19f80517-ad4d-5390-942a-d24529f30ffe","attributes":{"name":"security_contacts","description":"List of emails for security event notifications of an organization","value_type":"security_contacts_list","value":[],"modified_at":"2026-07-21T12:27:54.065443+00:00"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 171.391625ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v1/org/fasjyydbcgwwc2uc
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"org":{"public_id":"fasjyydbcgwwc2uc","name":"tf-plugin-test-update-784646869","description":null,"created":"2019-08-13 19:50:19","subscription":{"id":null,"billing_plan_id":8,"started":1565726073,"expires":null,"finished":null,"type":"dogfood","is_custom":false,"is_trial":false,"is_expired":true},"billing":{"type":"parent_billing"},"settings":{"default_landing_page":"APM Home","saml":{"enabled":false},"saml_can_be_enabled":true,"saml_login_url":null,"saml_idp_metadata_uploaded":true,"saml_idp_endpoint":"http://localhost:8088/sso/post","saml_idp_metadata_valid_until":null,"custom_landing_page":null,"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"enabled":false,"domains":[]},"private_widget_share":false,"manage_reports":"false"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 2.0118625s
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/org_configs/security_contacts
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"data":{"type":"org_configs","id":"19f80517-ad4d-5390-942a-d24529f30ffe","attributes":{"name":"security_contacts","description":"List of emails for security event notifications of an organization","value_type":"security_contacts_list","value":[],"modified_at":"2026-07-21T12:27:54.065443+00:00"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 155.257917ms
+    - id: 7
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v1/org/fasjyydbcgwwc2uc
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"org":{"public_id":"fasjyydbcgwwc2uc","name":"tf-plugin-test-update-784646869","description":null,"created":"2019-08-13 19:50:19","subscription":{"id":null,"billing_plan_id":8,"started":1565726073,"expires":null,"finished":null,"type":"dogfood","is_custom":false,"is_trial":false,"is_expired":true},"billing":{"type":"parent_billing"},"settings":{"default_landing_page":"APM Home","saml":{"enabled":false},"saml_can_be_enabled":true,"saml_login_url":null,"saml_idp_metadata_uploaded":true,"saml_idp_endpoint":"http://localhost:8088/sso/post","saml_idp_metadata_valid_until":null,"custom_landing_page":null,"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"enabled":false,"domains":[]},"private_widget_share":false,"manage_reports":"false"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 890.048625ms
+    - id: 8
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/org_configs/security_contacts
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"data":{"type":"org_configs","id":"19f80517-ad4d-5390-942a-d24529f30ffe","attributes":{"name":"security_contacts","description":"List of emails for security event notifications of an organization","value_type":"security_contacts_list","value":[],"modified_at":"2026-07-21T12:27:54.065443+00:00"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 162.106416ms
+    - id: 9
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v1/org/fasjyydbcgwwc2uc
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"org":{"public_id":"fasjyydbcgwwc2uc","name":"tf-plugin-test-update-784646869","description":null,"created":"2019-08-13 19:50:19","subscription":{"id":null,"billing_plan_id":8,"started":1565726073,"expires":null,"finished":null,"type":"dogfood","is_custom":false,"is_trial":false,"is_expired":true},"billing":{"type":"parent_billing"},"settings":{"default_landing_page":"APM Home","saml":{"enabled":false},"saml_can_be_enabled":true,"saml_login_url":null,"saml_idp_metadata_uploaded":true,"saml_idp_endpoint":"http://localhost:8088/sso/post","saml_idp_metadata_valid_until":null,"custom_landing_page":null,"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"enabled":false,"domains":[]},"private_widget_share":false,"manage_reports":"false"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 415.766083ms
+    - id: 10
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/org_configs/security_contacts
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"data":{"type":"org_configs","id":"19f80517-ad4d-5390-942a-d24529f30ffe","attributes":{"name":"security_contacts","description":"List of emails for security event notifications of an organization","value_type":"security_contacts_list","value":[],"modified_at":"2026-07-21T12:27:54.065443+00:00"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 147.515333ms
+    - id: 11
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 285
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: |
+            {"name":"tf-plugin-test-update-784646869","settings":{"private_widget_share":false,"saml":{"enabled":false},"saml_autocreate_users_domains":{"domains":["example.com","www.example.com"],"enabled":true},"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false}}}
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+        url: https://api.datadoghq.com/api/v1/org/fasjyydbcgwwc2uc
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"org":{"public_id":"fasjyydbcgwwc2uc","name":"tf-plugin-test-update-784646869","description":null,"created":"2019-08-13 19:50:19","subscription":{"id":null,"billing_plan_id":8,"started":1565726073,"expires":null,"finished":null,"type":"dogfood","is_custom":false,"is_trial":false,"is_expired":true},"billing":{"type":"parent_billing"},"settings":{"default_landing_page":"APM Home","saml":{"enabled":false},"saml_can_be_enabled":true,"saml_login_url":null,"saml_idp_metadata_uploaded":true,"saml_idp_endpoint":"http://localhost:8088/sso/post","saml_idp_metadata_valid_until":null,"custom_landing_page":null,"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"enabled":true,"domains":["example.com","www.example.com"]},"private_widget_share":false,"manage_reports":"false"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 791.651ms
+    - id: 12
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v1/org/fasjyydbcgwwc2uc
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"org":{"public_id":"fasjyydbcgwwc2uc","name":"tf-plugin-test-update-784646869","description":null,"created":"2019-08-13 19:50:19","subscription":{"id":null,"billing_plan_id":8,"started":1565726073,"expires":null,"finished":null,"type":"dogfood","is_custom":false,"is_trial":false,"is_expired":true},"billing":{"type":"parent_billing"},"settings":{"default_landing_page":"APM Home","saml":{"enabled":false},"saml_can_be_enabled":true,"saml_login_url":null,"saml_idp_metadata_uploaded":true,"saml_idp_endpoint":"http://localhost:8088/sso/post","saml_idp_metadata_valid_until":null,"custom_landing_page":null,"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"enabled":true,"domains":["example.com","www.example.com"]},"private_widget_share":false,"manage_reports":"false"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 2.177308375s
+    - id: 13
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/org_configs/security_contacts
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"data":{"type":"org_configs","id":"19f80517-ad4d-5390-942a-d24529f30ffe","attributes":{"name":"security_contacts","description":"List of emails for security event notifications of an organization","value_type":"security_contacts_list","value":[],"modified_at":"2026-07-21T12:27:54.065443+00:00"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 163.362ms
+    - id: 14
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v1/org/fasjyydbcgwwc2uc
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"org":{"public_id":"fasjyydbcgwwc2uc","name":"tf-plugin-test-update-784646869","description":null,"created":"2019-08-13 19:50:19","subscription":{"id":null,"billing_plan_id":8,"started":1565726073,"expires":null,"finished":null,"type":"dogfood","is_custom":false,"is_trial":false,"is_expired":true},"billing":{"type":"parent_billing"},"settings":{"default_landing_page":"APM Home","saml":{"enabled":false},"saml_can_be_enabled":true,"saml_login_url":null,"saml_idp_metadata_uploaded":true,"saml_idp_endpoint":"http://localhost:8088/sso/post","saml_idp_metadata_valid_until":null,"custom_landing_page":null,"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"enabled":true,"domains":["example.com","www.example.com"]},"private_widget_share":false,"manage_reports":"false"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 370.389666ms
+    - id: 15
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/org_configs/security_contacts
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"data":{"type":"org_configs","id":"19f80517-ad4d-5390-942a-d24529f30ffe","attributes":{"name":"security_contacts","description":"List of emails for security event notifications of an organization","value_type":"security_contacts_list","value":[],"modified_at":"2026-07-21T12:27:54.065443+00:00"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 946.077292ms
+    - id: 16
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 285
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: |
+            {"name":"tf-plugin-test-updat2-784646869","settings":{"private_widget_share":false,"saml":{"enabled":false},"saml_autocreate_users_domains":{"domains":["example.com","www.example.com"],"enabled":true},"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false}}}
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+        url: https://api.datadoghq.com/api/v1/org/fasjyydbcgwwc2uc
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"org":{"public_id":"fasjyydbcgwwc2uc","name":"tf-plugin-test-updat2-784646869","description":null,"created":"2019-08-13 19:50:19","subscription":{"id":null,"billing_plan_id":8,"started":1565726073,"expires":null,"finished":null,"type":"dogfood","is_custom":false,"is_trial":false,"is_expired":true},"billing":{"type":"parent_billing"},"settings":{"default_landing_page":"APM Home","saml":{"enabled":false},"saml_can_be_enabled":true,"saml_login_url":null,"saml_idp_metadata_uploaded":true,"saml_idp_endpoint":"http://localhost:8088/sso/post","saml_idp_metadata_valid_until":null,"custom_landing_page":null,"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"enabled":true,"domains":["example.com","www.example.com"]},"private_widget_share":false,"manage_reports":"false"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 700.733125ms
+    - id: 17
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v1/org/fasjyydbcgwwc2uc
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"org":{"public_id":"fasjyydbcgwwc2uc","name":"tf-plugin-test-updat2-784646869","description":null,"created":"2019-08-13 19:50:19","subscription":{"id":null,"billing_plan_id":8,"started":1565726073,"expires":null,"finished":null,"type":"dogfood","is_custom":false,"is_trial":false,"is_expired":true},"billing":{"type":"parent_billing"},"settings":{"default_landing_page":"APM Home","saml":{"enabled":false},"saml_can_be_enabled":true,"saml_login_url":null,"saml_idp_metadata_uploaded":true,"saml_idp_endpoint":"http://localhost:8088/sso/post","saml_idp_metadata_valid_until":null,"custom_landing_page":null,"saml_idp_initiated_login":{"enabled":false},"saml_strict_mode":{"enabled":false},"saml_autocreate_access_role":"st","saml_autocreate_users_domains":{"enabled":true,"domains":["example.com","www.example.com"]},"private_widget_share":false,"manage_reports":"false"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 474.488584ms
+    - id: 18
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/org_configs/security_contacts
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: |
+            {"data":{"type":"org_configs","id":"19f80517-ad4d-5390-942a-d24529f30ffe","attributes":{"name":"security_contacts","description":"List of emails for security event notifications of an organization","value_type":"security_contacts_list","value":[],"modified_at":"2026-07-21T12:27:54.065443+00:00"}}}
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 151.191292ms

@@ -23,23 +23,23 @@ data "datadog_service_level_objectives" "ft_foo_slos" {
 
 ### Optional
 
-- **ids** (List of String) An array of SLO IDs to limit the search.
-- **metrics_query** (String) Filter results based on SLO numerator and denominator.
-- **name_query** (String) Filter results based on SLO names.
-- **tags_query** (String) Filter results based on a single SLO tag.
+- `error_on_empty_result` (Boolean) Throw an error if no results are found. Defaults to `true`.
+- `ids` (List of String) An array of SLO IDs to limit the search.
+- `metrics_query` (String) Filter results based on SLO numerator and denominator.
+- `name_query` (String) Filter results based on SLO names.
+- `query` (String) The query string to filter results based on SLO names. Some examples of queries include service:<service-name> and <slo-name>.
+- `tags_query` (String) Filter results based on a single SLO tag.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
-- **slos** (List of Object) List of SLOs (see [below for nested schema](#nestedatt--slos))
+- `id` (String) The ID of this resource.
+- `slos` (List of Object) List of SLOs (see [below for nested schema](#nestedatt--slos))
 
 <a id="nestedatt--slos"></a>
 ### Nested Schema for `slos`
 
 Read-Only:
 
-- **id** (String)
-- **name** (String)
-- **type** (String)
-
-
+- `id` (String)
+- `name` (String)
+- `type` (String)

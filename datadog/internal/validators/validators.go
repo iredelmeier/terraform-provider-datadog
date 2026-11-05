@@ -1,13 +1,18 @@
 package validators
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/hashicorp/go-cty/cty"
+	"github.com/hashicorp/terraform-plugin-framework-validators/helpers/validatordiag"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -21,30 +26,93 @@ func ValidateFloatString(v interface{}, k string) (ws []string, errors []error) 
 // EnumChecker type to get allowed enum values from validate func
 type EnumChecker struct{}
 
-// ValidateEnumValue returns a validate func for an enum value. It takes the constructor with validation for the enum as an argument.
+func contains(values []string, value string) bool {
+	for _, v := range values {
+		if value == v {
+			return true
+		}
+	}
+	return false
+}
+
+func buildMessageString(values []string) string {
+	stringValues := make([]string, 0)
+	for _, v := range values {
+		stringValues = append(stringValues, fmt.Sprintf("`%s`", v))
+	}
+	return strings.Join(stringValues, ", ")
+}
+
+func ValidateStringEnumValue(allowedValues ...interface{}) schema.SchemaValidateDiagFunc {
+	allowedStringValues := make([]string, 0)
+	for _, v := range allowedValues {
+		allowedStringValues = append(allowedStringValues, fmt.Sprint(v))
+	}
+
+	return func(val interface{}, path cty.Path) diag.Diagnostics {
+		var diags diag.Diagnostics
+
+		if _, ok := val.(EnumChecker); ok {
+			return append(diags, diag.Diagnostic{
+				Severity:      diag.Warning,
+				Summary:       "Allowed values",
+				Detail:        buildMessageString(allowedStringValues),
+				AttributePath: cty.Path{},
+			})
+		}
+
+		stringVal, isString := val.(string)
+		if !isString {
+			return append(diags, diag.Diagnostic{
+				Severity:      diag.Error,
+				Summary:       "Invalid value type",
+				Detail:        "Field value must be of type string",
+				AttributePath: path,
+			})
+		}
+
+		if !contains(allowedStringValues, stringVal) {
+			return append(diags, diag.Diagnostic{
+				Severity:      diag.Error,
+				Summary:       "Invalid enum value",
+				Detail:        fmt.Sprintf("Invalid value '%v': valid values are %v", val, allowedStringValues),
+				AttributePath: path,
+			})
+		}
+		return diags
+	}
+}
+
+// ValidateEnumValue returns a validate func for a collection of enum value. It takes the constructors with validation for the enum as an argument.
 // Such a constructor is for instance `datadogV1.NewWidgetLineWidthFromValue`
-func ValidateEnumValue(newEnumFunc interface{}) schema.SchemaValidateDiagFunc {
+func ValidateEnumValue(newEnumFuncs ...interface{}) schema.SchemaValidateDiagFunc {
 
 	// Get type of arg to convert int to int32/64 for instance
-	f := reflect.TypeOf(newEnumFunc)
-	argT := f.In(0)
+	f := make([]reflect.Type, len(newEnumFuncs))
+	argT := make([]reflect.Type, len(newEnumFuncs))
+	for idx, newEnumFunc := range newEnumFuncs {
+		f[idx] = reflect.TypeOf(newEnumFunc)
+		argT[idx] = f[idx].In(0)
+	}
 
 	return func(val interface{}, path cty.Path) diag.Diagnostics {
 		var diags diag.Diagnostics
 
 		// Hack to return a specific diagnostic containing the allowed enum values and have accurate docs
+		msg := ""
+		sep := ""
 		if _, ok := val.(EnumChecker); ok {
-			enum := reflect.New(f.Out(0)).Elem()
-			validValues := enum.MethodByName("GetAllowedValues").Call([]reflect.Value{})[0]
-			msg := ""
-			sep := ", "
-			for i := 0; i < validValues.Len(); i++ {
-				if i == validValues.Len()-1 {
-					sep = ""
-				}
-				msg += fmt.Sprintf("`%v`%s", validValues.Index(i).Interface(), sep)
-			}
+			for _, fi := range f {
+				enum := reflect.New(fi.Out(0)).Elem()
+				validValues := enum.MethodByName("GetAllowedValues").Call([]reflect.Value{})[0]
 
+				for i := 0; i < validValues.Len(); i++ {
+					if len(msg) > 0 {
+						sep = ", "
+					}
+					msg += fmt.Sprintf("%s`%v`", sep, validValues.Index(i).Interface())
+				}
+			}
 			return append(diags, diag.Diagnostic{
 				Severity:      diag.Warning,
 				Summary:       "Allowed values",
@@ -54,17 +122,42 @@ func ValidateEnumValue(newEnumFunc interface{}) schema.SchemaValidateDiagFunc {
 		}
 
 		arg := reflect.ValueOf(val)
-		outs := reflect.ValueOf(newEnumFunc).Call([]reflect.Value{arg.Convert(argT)})
-		if err := outs[1].Interface(); err != nil {
-			diags = append(diags, diag.Diagnostic{
+		sep = ""
+		nbErrors := 0
+		for idx, newEnumFunc := range newEnumFuncs {
+			outs := reflect.ValueOf(newEnumFunc).Call([]reflect.Value{arg.Convert(argT[idx])})
+			if err := outs[1].Interface(); err != nil {
+				if len(msg) > 0 {
+					sep = ", "
+				}
+				msg += fmt.Sprintf("%s`%v`", sep, err.(error).Error())
+				nbErrors++
+			}
+		}
+		if nbErrors == len(newEnumFuncs) {
+			return append(diags, diag.Diagnostic{
 				Severity:      diag.Error,
 				Summary:       "Invalid enum value",
-				Detail:        err.(error).Error(),
+				Detail:        msg,
 				AttributePath: path,
 			})
 		}
 		return diags
 	}
+}
+
+// ValidateDatadogNonEmptyStrings ensures a string isn't empty
+func ValidateNonEmptyStrings(v any, p cty.Path) diag.Diagnostics {
+	value, ok := v.(string)
+	var diags diag.Diagnostics
+	if ok && value == "" {
+		return append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "Invalid value",
+			Detail:   "Empty strings are not supported in this field.",
+		})
+	}
+	return diags
 }
 
 // ValidateDatadogDowntimeRecurrenceType ensures a string is a valid recurrence type
@@ -112,4 +205,199 @@ func ValidateDatadogDowntimeTimezone(v interface{}, k string) (ws []string, erro
 		}
 	}
 	return
+}
+
+// ValidateAWSAccountID AWS Account ID must be a string exactly 12 digits long
+// See https://docs.aws.amazon.com/organizations/latest/APIReference/API_Account.html
+func ValidateAWSAccountID(v any, p cty.Path) diag.Diagnostics {
+	value, ok := v.(string)
+	var diags diag.Diagnostics
+	AWSAccountIDRegex := regexp.MustCompile(`^\d{12}$`)
+	AWSIAMAAccessKeyRegex := regexp.MustCompile(`^(AKIA|ASIA)[A-Z0-9]{16,20}`)
+	if ok && AWSIAMAAccessKeyRegex.MatchString(value) {
+		// Help the user with a deprecation warning
+		// Fedramp DD previously required using an IAM access key in place of the AWS account id
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Warning,
+			Summary:  "Deprecated",
+			Detail:   "the provided account ID might be an IAM access key. This behavior is deprecated. Use the AWS account ID instead.",
+		})
+	}
+	if ok && !AWSAccountIDRegex.MatchString(value) {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "Invalid value",
+			Detail:   "account id must be a string containing exactly 12 digits",
+		})
+	}
+	return diags
+}
+
+var _ schema.SchemaValidateDiagFunc = ValidateBasicEmail
+var basicEmailRe = regexp.MustCompile("^[^@]+@[^@]+\\.[^@.]+$")
+
+// ValidateBasicEmail ensures a string looks like an email
+func ValidateBasicEmail(val any, path cty.Path) diag.Diagnostics {
+	str, ok := val.(string)
+	if !ok {
+		return diag.Diagnostics{{
+			Severity:      diag.Error,
+			Summary:       fmt.Sprintf("not a string: %s", val),
+			AttributePath: path,
+		}}
+	}
+	if !basicEmailRe.MatchString(str) {
+		return diag.Diagnostics{{
+			Severity:      diag.Error,
+			Summary:       fmt.Sprintf("not a email: %s", str),
+			AttributePath: path,
+		}}
+	}
+	return nil
+}
+
+var _ validator.String = BetweenValidator{}
+
+type BetweenValidator struct {
+	min float64
+	max float64
+}
+
+func (v BetweenValidator) Description(ctx context.Context) string {
+	return v.MarkdownDescription(ctx)
+}
+
+func (v BetweenValidator) MarkdownDescription(_ context.Context) string {
+	return fmt.Sprintf("Value must be between %.2f and %.2f.", v.min, v.max)
+}
+
+func (v BetweenValidator) ValidateString(ctx context.Context, request validator.StringRequest, response *validator.StringResponse) {
+	if request.ConfigValue.IsNull() || request.ConfigValue.IsUnknown() {
+		return
+	}
+
+	value := request.ConfigValue.ValueString()
+
+	fValue, err := strconv.ParseFloat(value, 64)
+
+	if err != nil {
+		response.Diagnostics.AddError(
+			"value must be float",
+			fmt.Sprintf("was %s", value),
+		)
+	}
+
+	if fValue < v.min || fValue > v.max {
+		response.Diagnostics.Append(validatordiag.InvalidAttributeValueDiagnostic(
+			request.Path,
+			v.Description(ctx),
+			fmt.Sprintf("%f", fValue),
+		))
+	}
+}
+
+func Float64Between(min, max float64) validator.String {
+	if min > max {
+		return nil
+	}
+
+	return BetweenValidator{
+		min: min,
+		max: max,
+	}
+}
+
+func ValidateHttpRequestHeaders(v interface{}, k string) (ws []string, errors []error) {
+	headersMap := v.(map[string]interface{})
+	for headerField, headerValue := range headersMap {
+		if !isValidToken(headerField) && !isRequestPseudoHeader(headerField) && !containsDatadogVariableSyntax(headerField) {
+			errors = append(errors, fmt.Errorf("invalid value for %s (header field must be a valid token or a http/2 request pseudo-header)", k))
+			return
+		}
+
+		headerStringValue, ok := headerValue.(string)
+		if !ok {
+			errors = append(errors, fmt.Errorf("expected type of %s to be string", k))
+			return
+		}
+
+		for _, r := range headerStringValue {
+			if (unicode.IsControl(r) && r != '\t') || (r == '\r' || r == '\n') {
+				errors = append(errors, fmt.Errorf("invalid value for %s (header value must not contain invisible characters)", k))
+				return
+			}
+		}
+	}
+	return
+}
+
+func isRequestPseudoHeader(header string) bool {
+	// :status is a response pseudo-header, and :protocol may only be used internally in websockets
+	return header == ":method" || header == ":scheme" || header == ":authority" || header == ":path"
+}
+
+func containsDatadogVariableSyntax(header string) bool {
+	return regexp.MustCompile(`{{\s*([^{}]*?)\s*}}`).MatchString(header)
+}
+
+func isValidToken(token string) bool {
+	for _, r := range token {
+		if !isTokenChar(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func isTokenChar(r rune) bool {
+	if r >= '!' && r <= '~' && !strings.ContainsRune("()<>@,;:\\\"/[]?={} \t", r) {
+		return true
+	}
+	return false
+}
+
+// ValidateSecurityMonitoringDataSource validates the data_source field and warns about deprecated app_sec_spans value
+func ValidateSecurityMonitoringDataSource(enumValidator schema.SchemaValidateDiagFunc) schema.SchemaValidateDiagFunc {
+	return func(val interface{}, path cty.Path) diag.Diagnostics {
+		var diags diag.Diagnostics
+		if stringVal, ok := val.(string); ok && stringVal == "app_sec_spans" {
+			diags = append(diags, diag.Diagnostic{
+				Severity:      diag.Warning,
+				Summary:       "app_sec_spans datasource is deprecated",
+				Detail:        "Use data_source = \"spans\" and add @appsec.security_activity:* to your query to keep the same behavior",
+				AttributePath: path,
+			})
+		}
+		return append(diags, enumValidator(val, path)...)
+	}
+}
+
+// Framework equivalent of ValidateSecurityMonitoringDataSource: warns on deprecated app_sec_spans.
+type securityMonitoringDataSourceWarningValidator struct{}
+
+func (securityMonitoringDataSourceWarningValidator) Description(context.Context) string {
+	return "warns when data_source is set to a deprecated value"
+}
+
+func (v securityMonitoringDataSourceWarningValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (securityMonitoringDataSourceWarningValidator) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	if req.ConfigValue.ValueString() == "app_sec_spans" {
+		resp.Diagnostics.AddAttributeWarning(
+			req.Path,
+			"app_sec_spans datasource is deprecated",
+			"Use data_source = \"spans\" and add @appsec.security_activity:* to your query to keep the same behavior",
+		)
+	}
+}
+
+// SecurityMonitoringDataSourceWarningValidator warns on the legacy app_sec_spans value.
+// Chain with NewEnumValidator for accept/reject; this validator never errors.
+func SecurityMonitoringDataSourceWarningValidator() validator.String {
+	return securityMonitoringDataSourceWarningValidator{}
 }

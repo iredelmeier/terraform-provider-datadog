@@ -6,20 +6,30 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
-func TestAccDatadogOrganizationSettings_Update(t *testing.T) {
+func preludeAccDatadogOrganizationSettings(t *testing.T) {
+	// Temporarily comment this whole function to update the cassettes recording
 	if !isReplaying() {
 		t.Skip("This test only supports replaying")
 	}
 	t.Parallel()
+}
+
+func TestAccDatadogOrganizationSettings_Update(t *testing.T) {
+	preludeAccDatadogOrganizationSettings(t)
 	ctx, accProviders := testAccProviders(context.Background(), t)
-	uniqueEntity := uniqueEntityName(ctx, t)
-	organizationName := fmt.Sprint(uniqueEntity[len(uniqueEntity)-30:])
-	organizationName2 := organizationName + "-2"
+	organizationName := uniqueOrgName(ctx, "update")
+	organizationName2 := uniqueOrgName(ctx, "updat2")
 	resourceName := "datadog_organization_settings.foo"
 
+	// A few settings are asserted existence-only rather than to a fixed value because they depend
+	// on how the test org is provisioned rather than on the provider:
+	//   - saml_can_be_enabled / saml_idp_metadata_uploaded are read-only capability flags that are
+	//     true when SAML IdP metadata is uploaded to the org (which the standard test org has).
+	//   - private_widget_share seems to be a no-op for our testing org for some reason (the v1
+	//     org-update API accepts the write but the value never changes), so it is not toggled here.
 	resource.Test(t, resource.TestCase{
 		PreCheck:          func() { testAccPreCheck(t) },
 		ProviderFactories: accProviders,
@@ -30,7 +40,6 @@ func TestAccDatadogOrganizationSettings_Update(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "name", organizationName),
 					resource.TestCheckResourceAttrSet(resourceName, "public_id"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.private_widget_share"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.private_widget_share", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml.0.enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_autocreate_access_role"),
@@ -39,11 +48,9 @@ func TestAccDatadogOrganizationSettings_Update(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_autocreate_users_domains.0.enabled", "false"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_autocreate_users_domains.0.domains.#", "0"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_can_be_enabled"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_can_be_enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_idp_initiated_login.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_idp_initiated_login.0.enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_idp_metadata_uploaded"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_idp_metadata_uploaded", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_strict_mode.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_strict_mode.0.enabled", "false"),
 				),
@@ -54,7 +61,6 @@ func TestAccDatadogOrganizationSettings_Update(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "name", organizationName),
 					resource.TestCheckResourceAttrSet(resourceName, "public_id"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.private_widget_share"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.private_widget_share", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml.0.enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_autocreate_access_role"),
@@ -63,11 +69,9 @@ func TestAccDatadogOrganizationSettings_Update(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_autocreate_users_domains.0.enabled", "false"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_autocreate_users_domains.0.domains.#", "0"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_can_be_enabled"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_can_be_enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_idp_initiated_login.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_idp_initiated_login.0.enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_idp_metadata_uploaded"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_idp_metadata_uploaded", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_strict_mode.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_strict_mode.0.enabled", "false"),
 				),
@@ -78,7 +82,6 @@ func TestAccDatadogOrganizationSettings_Update(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "name", organizationName),
 					resource.TestCheckResourceAttrSet(resourceName, "public_id"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.private_widget_share"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.private_widget_share", "true"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml.0.enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_autocreate_access_role"),
@@ -89,11 +92,9 @@ func TestAccDatadogOrganizationSettings_Update(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_autocreate_users_domains.0.domains.0", "example.com"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_autocreate_users_domains.0.domains.1", "www.example.com"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_can_be_enabled"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_can_be_enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_idp_initiated_login.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_idp_initiated_login.0.enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_idp_metadata_uploaded"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_idp_metadata_uploaded", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_strict_mode.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_strict_mode.0.enabled", "false"),
 				),
@@ -104,7 +105,6 @@ func TestAccDatadogOrganizationSettings_Update(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "name", organizationName2),
 					resource.TestCheckResourceAttrSet(resourceName, "public_id"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.private_widget_share"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.private_widget_share", "true"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml.0.enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_autocreate_access_role"),
@@ -115,11 +115,9 @@ func TestAccDatadogOrganizationSettings_Update(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_autocreate_users_domains.0.domains.0", "example.com"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_autocreate_users_domains.0.domains.1", "www.example.com"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_can_be_enabled"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_can_be_enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_idp_initiated_login.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_idp_initiated_login.0.enabled", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_idp_metadata_uploaded"),
-					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_idp_metadata_uploaded", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "settings.0.saml_strict_mode.0.enabled"),
 					resource.TestCheckResourceAttr(resourceName, "settings.0.saml_strict_mode.0.enabled", "false"),
 				),
@@ -128,15 +126,11 @@ func TestAccDatadogOrganizationSettings_Update(t *testing.T) {
 	})
 }
 
-func TestDatadogOrganizationSettings_import(t *testing.T) {
-	if !isReplaying() {
-		t.Skip("This test only supports replaying")
-	}
-	t.Parallel()
+func TestAccDatadogOrganizationSettings_Import(t *testing.T) {
+	preludeAccDatadogOrganizationSettings(t)
 	resourceName := "datadog_organization_settings.foo"
 	ctx, accProviders := testAccProviders(context.Background(), t)
-	uniqueEntity := uniqueEntityName(ctx, t)
-	organizationName := fmt.Sprint(uniqueEntity[len(uniqueEntity)-30:])
+	organizationName := uniqueOrgName(ctx, "import")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:          func() { testAccPreCheck(t) },
@@ -154,13 +148,88 @@ func TestDatadogOrganizationSettings_import(t *testing.T) {
 	})
 }
 
-func TestAccDatadogOrganizationSettings_IncorrectName(t *testing.T) {
-	if !isReplaying() {
-		t.Skip("This test only supports replaying")
-	}
-	t.Parallel()
+func TestAccDatadogOrganizationSettings_SecurityContacts(t *testing.T) {
+	preludeAccDatadogOrganizationSettings(t)
 	ctx, accProviders := testAccProviders(context.Background(), t)
-	organizationName := uniqueEntityName(ctx, t) + "qwertyuiopasdfghjklzxcvbnm0123456" // 32 characters
+	organizationName := uniqueOrgName(ctx, "secCon")
+	cfg := func(extra string) string {
+		return fmt.Sprintf(`
+			resource datadog_organization_settings foo {
+				name = "%s"
+				%s
+			}
+		`, organizationName, extra)
+	}
+
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:        true,
+		ProviderFactories: accProviders,
+		Steps: []resource.TestStep{
+			{
+				Config:      cfg(`security_contacts = [null]`),
+				ExpectError: regexp.MustCompile("Error: Null value found in list"),
+			},
+			{
+				Config:      cfg(`security_contacts = ["foo@example@org"]`),
+				ExpectError: regexp.MustCompile("Error: not a email: foo@example@org"),
+			},
+		},
+	})
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: accProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: cfg(``),
+			},
+			{
+				Config: cfg(`security_contacts = ["foo@example.org"]`),
+			},
+			{
+				Config: cfg(`security_contacts = ["foo@example.org", "bar@example.org"]`),
+			},
+			{
+				Config:   cfg(`security_contacts = ["foo@example.org", "bar@example.org"]`),
+				PlanOnly: true, // no change
+			},
+			{
+				ResourceName:      "datadog_organization_settings.foo",
+				Config:            cfg(``),
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				Config:   cfg(`security_contacts = null`),
+				PlanOnly: true, // not configured, no change
+			},
+			{
+				Config:   cfg(``),
+				PlanOnly: true, // not configured, no change
+			},
+		},
+	})
+
+	// Starting from scratch, unset the security contacts (test an edge case around zero-values plans)
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: accProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: cfg(`security_contacts = []`),
+			},
+			{
+				Config:   cfg(`security_contacts = []`),
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
+func TestAccDatadogOrganizationSettings_IncorrectName(t *testing.T) {
+	preludeAccDatadogOrganizationSettings(t)
+	_, accProviders := testAccProviders(context.Background(), t)
+	organizationName := "very-long-and-boring-name-longer-than-32-characters"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:          func() { testAccPreCheck(t) },
@@ -172,6 +241,16 @@ func TestAccDatadogOrganizationSettings_IncorrectName(t *testing.T) {
 			},
 		},
 	})
+}
+
+// uniqueOrgName returns an organization name for a particular test, whose id must be 6 char long at most.
+// uniqueEntityName is not suitable because org names are limited to 32 characters.
+func uniqueOrgName(ctx context.Context, id string) string {
+	r := fmt.Sprintf("tf-plugin-test-%s-%d", id, clockFromContext(ctx).Now().Unix()%1e9)
+	if len(r) > 32 {
+		panic("uniqueOrgName is too long: " + r)
+	}
+	return r
 }
 
 func testAccCheckDatadogOrganizationSettingsConfig_Required(uniq string) string {
@@ -205,7 +284,6 @@ resource "datadog_organization_settings" "foo" {
   name = "%s"
 
   settings {
-    private_widget_share = true
 	saml {
 		enabled = false
 	}

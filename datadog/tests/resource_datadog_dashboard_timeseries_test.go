@@ -9,11 +9,11 @@ resource "datadog_dashboard" "timeseries_dashboard" {
 	title         = "{{uniq}}"
 	description   = "Created using the Datadog provider in Terraform"
 	layout_type   = "ordered"
-	is_read_only  = "true"
 	widget {
 		timeseries_definition {
 			title_size = "16"
 			title_align = "left"
+			description = "CPU usage across production by application."
 			show_legend = "true"
 			title = "system.cpu.user, env, process.stat.cpu.total_pct, network.bytes_read, @d..."
 			legend_size = "2"
@@ -221,7 +221,6 @@ resource "datadog_dashboard" "timeseries_dashboard" {
 	title         = "{{uniq}}"
 	description   = "Created using the Datadog provider in Terraform"
 	layout_type   = "ordered"
-	is_read_only  = "true"
 	widget {
 		timeseries_definition {
 			title_size = "16"
@@ -428,7 +427,6 @@ resource "datadog_dashboard" "timeseries_dashboard" {
 	title         = "{{uniq}}"
 	description   = "Created using the Datadog provider in Terraform"
 	layout_type   = "ordered"
-	is_read_only  = "true"
 	widget {
 		timeseries_definition {
 			request {
@@ -464,7 +462,6 @@ resource "datadog_dashboard" "timeseries_dashboard" {
 						 aggregator = "sum"
 					}
 				}
-
 			}
 		}
 	}
@@ -475,6 +472,7 @@ resource "datadog_dashboard" "timeseries_dashboard" {
 					event_query {
 						data_source = "logs"
 						indexes = ["days-3"]
+						storage = "hot"
 						name = "my_event_query"
 						compute {
 							aggregation = "count"
@@ -490,7 +488,22 @@ resource "datadog_dashboard" "timeseries_dashboard" {
 							  order = "desc"
 							}
 							limit = 10
-						  }
+						}
+					}
+				}
+			}
+			request {
+				display_type = "overlay"
+				query {
+					event_query {
+						data_source = "logs"
+						name = "my_event_overlay"
+						compute {
+							aggregation = "count"
+						}
+						search {
+							query = "abc"
+						}
 					}
 				}
 			}
@@ -514,12 +527,42 @@ resource "datadog_dashboard" "timeseries_dashboard" {
 			}
 		}
 	}
+	widget {
+		timeseries_definition {
+			request {
+				query {
+					slo_query {
+						data_source = "slo"
+						slo_id = "b4c7739b2af25f9d947f828730357832"
+						name = "query1"
+						group_mode = "overall"
+						measure = "slo_status"
+						slo_query_type = "metric"
+						additional_query_filters = "*"
+					}
+				}
+			}
+		}
+	}
+	widget {
+		timeseries_definition {
+			request {
+				query {
+					cloud_cost_query {
+						data_source = "cloud_cost"
+						query = "sum:aws.cost.amortized{*}"
+						name = "query1"
+						aggregator = "sum"
+					}
+				}
+			}
+		}
+	}
 }
 `
 
 var datadogDashboardTimeseriesAsserts = []string{
 	"title = {{uniq}}",
-	"is_read_only = true",
 	"layout_type = ordered",
 	"description = Created using the Datadog provider in Terraform",
 	"widget.0.timeseries_definition.0.show_legend = true",
@@ -536,6 +579,7 @@ var datadogDashboardTimeseriesAsserts = []string{
 	"widget.0.timeseries_definition.0.legend_size = 2",
 	"widget.0.timeseries_definition.0.live_span = 5m",
 	"widget.0.timeseries_definition.0.title_align = left",
+	"widget.0.timeseries_definition.0.description = CPU usage across production by application.",
 	"widget.0.timeseries_definition.0.title = system.cpu.user, env, process.stat.cpu.total_pct, network.bytes_read, @d...",
 	"widget.0.timeseries_definition.0.title_size = 16",
 	"widget.0.timeseries_definition.0.event.0.q = sources:test tags:1",
@@ -687,7 +731,6 @@ var datadogDashboardTimeseriesAsserts = []string{
 
 var datadogDashboardFormulaAsserts = []string{
 	"title = {{uniq}}",
-	"is_read_only = true",
 	"layout_type = ordered",
 	"description = Created using the Datadog provider in Terraform",
 	"widget.0.timeseries_definition.0.request.0.formula.0.formula_expression = my_query_1 + my_query_2",
@@ -708,6 +751,7 @@ var datadogDashboardFormulaAsserts = []string{
 	"widget.0.timeseries_definition.0.request.0.query.1.metric_query.0.aggregator = sum",
 	"widget.1.timeseries_definition.0.request.0.query.0.event_query.0.data_source = logs",
 	"widget.1.timeseries_definition.0.request.0.query.0.event_query.0.indexes.# = 1",
+	"widget.1.timeseries_definition.0.request.0.query.0.event_query.0.storage = hot",
 	"widget.1.timeseries_definition.0.request.0.query.0.event_query.0.indexes.0 = days-3",
 	"widget.1.timeseries_definition.0.request.0.query.0.event_query.0.name = my_event_query",
 	"widget.1.timeseries_definition.0.request.0.query.0.event_query.0.group_by.0.facet = host",
@@ -716,6 +760,9 @@ var datadogDashboardFormulaAsserts = []string{
 	"widget.1.timeseries_definition.0.request.0.query.0.event_query.0.group_by.0.sort.0.order = desc",
 	"widget.1.timeseries_definition.0.request.0.query.0.event_query.0.group_by.0.limit = 10",
 	"widget.1.timeseries_definition.0.request.0.query.0.event_query.0.compute.0.aggregation = count",
+	"widget.1.timeseries_definition.0.request.1.display_type = overlay",
+	"widget.1.timeseries_definition.0.request.1.query.0.event_query.0.name = my_event_overlay",
+	"widget.1.timeseries_definition.0.request.1.query.0.event_query.0.search.0.query = abc",
 	"widget.2.timeseries_definition.0.request.0.query.0.process_query.0.data_source = process",
 	"widget.2.timeseries_definition.0.request.0.query.0.process_query.0.text_filter = abc",
 	"widget.2.timeseries_definition.0.request.0.query.0.process_query.0.metric = process.stat.cpu.total_pct",
@@ -725,6 +772,17 @@ var datadogDashboardFormulaAsserts = []string{
 	"widget.2.timeseries_definition.0.request.0.query.0.process_query.0.name = my_process_query",
 	"widget.2.timeseries_definition.0.request.0.query.0.process_query.0.sort = asc",
 	"widget.2.timeseries_definition.0.request.0.query.0.process_query.0.is_normalized_cpu = true",
+	"widget.3.timeseries_definition.0.request.0.query.0.slo_query.0.data_source = slo",
+	"widget.3.timeseries_definition.0.request.0.query.0.slo_query.0.slo_id = b4c7739b2af25f9d947f828730357832",
+	"widget.3.timeseries_definition.0.request.0.query.0.slo_query.0.name = query1",
+	"widget.3.timeseries_definition.0.request.0.query.0.slo_query.0.group_mode = overall",
+	"widget.3.timeseries_definition.0.request.0.query.0.slo_query.0.measure = slo_status",
+	"widget.3.timeseries_definition.0.request.0.query.0.slo_query.0.slo_query_type = metric",
+	"widget.3.timeseries_definition.0.request.0.query.0.slo_query.0.additional_query_filters = *",
+	"widget.4.timeseries_definition.0.request.0.query.0.cloud_cost_query.0.data_source = cloud_cost",
+	"widget.4.timeseries_definition.0.request.0.query.0.cloud_cost_query.0.name = query1",
+	"widget.4.timeseries_definition.0.request.0.query.0.cloud_cost_query.0.aggregator = sum",
+	"widget.4.timeseries_definition.0.request.0.query.0.cloud_cost_query.0.query = sum:aws.cost.amortized{*}",
 }
 
 func TestAccDatadogDashboardTimeseries(t *testing.T) {
@@ -743,12 +801,72 @@ func TestAccDatadogDashboardFormula_import(t *testing.T) {
 	testAccDatadogDashboardWidgetUtilImport(t, datadogDashboardFormulaConfig, "datadog_dashboard.timeseries_dashboard")
 }
 
+const datadogDashboardGroupByFieldsConfig = `
+resource "datadog_dashboard" "timeseries_dashboard" {
+	title         = "{{uniq}}"
+	description   = "Created using the Datadog provider in Terraform"
+	layout_type   = "ordered"
+	widget {
+		timeseries_definition {
+			request {
+				query {
+					event_query {
+						data_source = "logs"
+						indexes = ["days-3"]
+						name = "my_event_query"
+						compute {
+							aggregation = "count"
+						}
+						search {
+							query = "abc"
+						}
+						group_by_fields {
+							fields = ["hostname", "service"]
+							limit = 10
+							sort {
+								aggregation = "count"
+								order = "desc"
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+`
+
+var datadogDashboardGroupByFieldsAsserts = []string{
+	"title = {{uniq}}",
+	"layout_type = ordered",
+	"description = Created using the Datadog provider in Terraform",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.data_source = logs",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.indexes.# = 1",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.indexes.0 = days-3",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.name = my_event_query",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.compute.0.aggregation = count",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.search.0.query = abc",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.group_by_fields.0.fields.# = 2",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.group_by_fields.0.fields.0 = hostname",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.group_by_fields.0.fields.1 = service",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.group_by_fields.0.limit = 10",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.group_by_fields.0.sort.0.aggregation = count",
+	"widget.0.timeseries_definition.0.request.0.query.0.event_query.0.group_by_fields.0.sort.0.order = desc",
+}
+
+func TestAccDatadogDashboardTimeseriesGroupByFields(t *testing.T) {
+	testAccDatadogDashboardWidgetUtil(t, datadogDashboardGroupByFieldsConfig, "datadog_dashboard.timeseries_dashboard", datadogDashboardGroupByFieldsAsserts)
+}
+
+func TestAccDatadogDashboardTimeseriesGroupByFields_import(t *testing.T) {
+	testAccDatadogDashboardWidgetUtilImport(t, datadogDashboardGroupByFieldsConfig, "datadog_dashboard.timeseries_dashboard")
+}
+
 const datadogDashboardTimeseriesMultiComputeConfig = `
 resource "datadog_dashboard" "timeseries_dashboard" {
 	title         = "{{uniq}}"
 	description   = "Created using the Datadog provider in Terraform"
 	layout_type   = "ordered"
-	is_read_only  = "true"
 	widget {
 		timeseries_definition {
 			title_size = "16"
@@ -824,7 +942,6 @@ resource "datadog_dashboard" "timeseries_dashboard" {
 	title         = "{{uniq}}"
 	description   = "Created using the Datadog provider in Terraform"
 	layout_type   = "ordered"
-	is_read_only  = "true"
 	widget {
 		timeseries_definition {
 			title_size = "16"
@@ -897,7 +1014,6 @@ resource "datadog_dashboard" "timeseries_dashboard" {
 
 var datadogDashboardTimeseriesMultiComputeAsserts = []string{
 	"title = {{uniq}}",
-	"is_read_only = true",
 	"layout_type = ordered",
 	"description = Created using the Datadog provider in Terraform",
 	"widget.0.timeseries_definition.0.event.0.q = sources:test tags:1",
@@ -950,4 +1066,184 @@ func TestAccDatadogDashboardTimeseriesMultiCompute(t *testing.T) {
 
 func TestAccDatadogDashboardTimeseriesMultiCompute_import(t *testing.T) {
 	testAccDatadogDashboardWidgetUtilImport(t, datadogDashboardTimeseriesMultiComputeConfigImport, "datadog_dashboard.timeseries_dashboard")
+}
+
+const datadogDashboardTimeseriesSemanticModeConfig = `
+resource "datadog_dashboard" "timeseries_dashboard" {
+	title         = "{{uniq}}"
+	description   = "Created using the Datadog provider in Terraform"
+	layout_type   = "ordered"
+	widget {
+		timeseries_definition {
+			title = "Timeseries with Semantic Mode Combined"
+			request {
+				formula {
+					formula_expression = "query1"
+				}
+				query {
+					metric_query {
+						data_source = "metrics"
+						query = "avg:system.cpu.user{*}"
+						name = "query1"
+						semantic_mode = "combined"
+					}
+				}
+			}
+		}
+	}
+	widget {
+		timeseries_definition {
+			title = "Timeseries with Semantic Mode Native"
+			request {
+				formula {
+					formula_expression = "query2"
+				}
+				query {
+					metric_query {
+						data_source = "metrics"
+						query = "avg:system.cpu.user{*}"
+						name = "query2"
+						semantic_mode = "native"
+					}
+				}
+			}
+		}
+	}
+}
+`
+
+var datadogDashboardTimeseriesSemanticModeAsserts = []string{
+	"title = {{uniq}}",
+	"description = Created using the Datadog provider in Terraform",
+	"layout_type = ordered",
+	"widget.0.timeseries_definition.0.title = Timeseries with Semantic Mode Combined",
+	"widget.0.timeseries_definition.0.request.0.formula.0.formula_expression = query1",
+	"widget.0.timeseries_definition.0.request.0.query.0.metric_query.0.data_source = metrics",
+	"widget.0.timeseries_definition.0.request.0.query.0.metric_query.0.query = avg:system.cpu.user{*}",
+	"widget.0.timeseries_definition.0.request.0.query.0.metric_query.0.name = query1",
+	"widget.0.timeseries_definition.0.request.0.query.0.metric_query.0.semantic_mode = combined",
+	"widget.1.timeseries_definition.0.title = Timeseries with Semantic Mode Native",
+	"widget.1.timeseries_definition.0.request.0.formula.0.formula_expression = query2",
+	"widget.1.timeseries_definition.0.request.0.query.0.metric_query.0.data_source = metrics",
+	"widget.1.timeseries_definition.0.request.0.query.0.metric_query.0.query = avg:system.cpu.user{*}",
+	"widget.1.timeseries_definition.0.request.0.query.0.metric_query.0.name = query2",
+	"widget.1.timeseries_definition.0.request.0.query.0.metric_query.0.semantic_mode = native",
+}
+
+func TestAccDatadogDashboardTimeseriesSemanticMode(t *testing.T) {
+	testAccDatadogDashboardWidgetUtil(t, datadogDashboardTimeseriesSemanticModeConfig, "datadog_dashboard.timeseries_dashboard", datadogDashboardTimeseriesSemanticModeAsserts)
+}
+
+func TestAccDatadogDashboardTimeseriesSemanticMode_import(t *testing.T) {
+	testAccDatadogDashboardWidgetUtilImport(t, datadogDashboardTimeseriesSemanticModeConfig, "datadog_dashboard.timeseries_dashboard")
+}
+
+const datadogDashboardTimeseriesOrderByConfig = `
+resource "datadog_dashboard" "timeseries_dashboard" {
+	title         = "{{uniq}}"
+	description   = "Created using the Datadog provider in Terraform"
+	layout_type   = "ordered"
+	widget {
+		timeseries_definition {
+			title = "Timeseries Ordered by Values"
+			request {
+				q = "avg:system.cpu.user{*} by {host}"
+				style {
+					palette = "dog_classic"
+					line_type = "solid"
+					line_width = "normal"
+					order_by = "values"
+				}
+				display_type = "line"
+			}
+		}
+	}
+	widget {
+		timeseries_definition {
+			title = "Timeseries Ordered by Tags"
+			request {
+				q = "avg:system.mem.used{*} by {host}"
+				style {
+					palette = "warm"
+					line_type = "dashed"
+					line_width = "thick"
+					order_by = "tags"
+				}
+				display_type = "line"
+			}
+		}
+	}
+}
+`
+
+var datadogDashboardTimeseriesOrderByAsserts = []string{
+	"title = {{uniq}}",
+	"description = Created using the Datadog provider in Terraform",
+	"layout_type = ordered",
+	"widget.0.timeseries_definition.0.title = Timeseries Ordered by Values",
+	"widget.0.timeseries_definition.0.request.0.q = avg:system.cpu.user{*} by {host}",
+	"widget.0.timeseries_definition.0.request.0.style.0.palette = dog_classic",
+	"widget.0.timeseries_definition.0.request.0.style.0.line_type = solid",
+	"widget.0.timeseries_definition.0.request.0.style.0.line_width = normal",
+	"widget.0.timeseries_definition.0.request.0.style.0.order_by = values",
+	"widget.0.timeseries_definition.0.request.0.display_type = line",
+	"widget.1.timeseries_definition.0.title = Timeseries Ordered by Tags",
+	"widget.1.timeseries_definition.0.request.0.q = avg:system.mem.used{*} by {host}",
+	"widget.1.timeseries_definition.0.request.0.style.0.palette = warm",
+	"widget.1.timeseries_definition.0.request.0.style.0.line_type = dashed",
+	"widget.1.timeseries_definition.0.request.0.style.0.line_width = thick",
+	"widget.1.timeseries_definition.0.request.0.style.0.order_by = tags",
+	"widget.1.timeseries_definition.0.request.0.display_type = line",
+}
+
+func TestAccDatadogDashboardTimeseriesOrderBy(t *testing.T) {
+	testAccDatadogDashboardWidgetUtil(t, datadogDashboardTimeseriesOrderByConfig, "datadog_dashboard.timeseries_dashboard", datadogDashboardTimeseriesOrderByAsserts)
+}
+
+func TestAccDatadogDashboardTimeseriesOrderBy_import(t *testing.T) {
+	testAccDatadogDashboardWidgetUtilImport(t, datadogDashboardTimeseriesOrderByConfig, "datadog_dashboard.timeseries_dashboard")
+}
+
+const datadogDashboardTimeseriesHasValueLabelsConfig = `
+resource "datadog_dashboard" "timeseries_dashboard" {
+	title         = "{{uniq}}"
+	description   = "Created using the Datadog provider in Terraform"
+	layout_type   = "ordered"
+	widget {
+		timeseries_definition {
+			title = "Timeseries With Value Labels"
+			request {
+				q = "avg:system.cpu.user{*} by {host}"
+				style {
+					palette = "dog_classic"
+					line_type = "solid"
+					line_width = "normal"
+					has_value_labels = true
+				}
+				display_type = "line"
+			}
+		}
+	}
+}
+`
+
+var datadogDashboardTimeseriesHasValueLabelsAsserts = []string{
+	"title = {{uniq}}",
+	"description = Created using the Datadog provider in Terraform",
+	"layout_type = ordered",
+	"widget.0.timeseries_definition.0.title = Timeseries With Value Labels",
+	"widget.0.timeseries_definition.0.request.0.q = avg:system.cpu.user{*} by {host}",
+	"widget.0.timeseries_definition.0.request.0.style.0.palette = dog_classic",
+	"widget.0.timeseries_definition.0.request.0.style.0.line_type = solid",
+	"widget.0.timeseries_definition.0.request.0.style.0.line_width = normal",
+	"widget.0.timeseries_definition.0.request.0.style.0.has_value_labels = true",
+	"widget.0.timeseries_definition.0.request.0.display_type = line",
+}
+
+func TestAccDatadogDashboardTimeseriesHasValueLabels(t *testing.T) {
+	testAccDatadogDashboardWidgetUtil(t, datadogDashboardTimeseriesHasValueLabelsConfig, "datadog_dashboard.timeseries_dashboard", datadogDashboardTimeseriesHasValueLabelsAsserts)
+}
+
+func TestAccDatadogDashboardTimeseriesHasValueLabels_import(t *testing.T) {
+	testAccDatadogDashboardWidgetUtilImport(t, datadogDashboardTimeseriesHasValueLabelsConfig, "datadog_dashboard.timeseries_dashboard")
 }

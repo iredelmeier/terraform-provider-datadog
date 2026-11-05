@@ -25,21 +25,33 @@ resource "datadog_synthetics_private_location" "private_location" {
 
 ### Required
 
-- **name** (String) Synthetics private location name.
+- `name` (String) Synthetics private location name.
 
 ### Optional
 
-- **description** (String) Description of the private location.
-- **tags** (List of String) A list of tags to associate with your synthetics private location.
+- `api_key` (String, Sensitive) API key used to generate the private location configuration.
+- `description` (String) Description of the private location. Defaults to `""`.
+- `metadata` (Block List) The private location metadata (see [below for nested schema](#nestedblock--metadata))
+- `tags` (List of String) A list of tags to associate with your synthetics private location.
 
 ### Read-Only
 
-- **config** (String, Sensitive) Configuration skeleton for the private location. See installation instructions of the private location on how to use this configuration.
-- **id** (String) The ID of this resource.
+- `config` (String, Sensitive) Configuration skeleton for the private location. See installation instructions of the private location on how to use this configuration.
+- `id` (String) The ID of this resource.
+- `restriction_policy_resource_id` (String) Resource ID to use when setting restrictions with a `datadog_restriction_policy` resource.
+
+<a id="nestedblock--metadata"></a>
+### Nested Schema for `metadata`
+
+Optional:
+
+- `restricted_roles` (Set of String, Deprecated) A set of role identifiers pulled from the Roles API to restrict read and write access. **Deprecated.** This field is no longer supported by the Datadog API. Please use `datadog_restriction_policy` instead.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 # Synthetics private locations can be imported using their string ID, e.g.

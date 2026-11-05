@@ -5,42 +5,36 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
-	datadogV1 "github.com/DataDog/datadog-api-client-go/api/v1/datadog"
-	datadogV2 "github.com/DataDog/datadog-api-client-go/api/v2/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/logging"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	datadogCommunity "github.com/zorkian/go-datadog-api"
 
-	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/transport"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/cloudauth"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/terraformauth"
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/validators"
-)
-
-var (
-	baseIPRangesSubdomain = "ip-ranges"
 )
 
 func init() {
 	// Set descriptions to support markdown syntax, this will be used in document generation
 	// and the language server.
-	//schema.DescriptionKind = configschema.StringMarkdown
+	// schema.DescriptionKind = configschema.StringMarkdown
 
 	// Customize the content of descriptions when output. For example you can add defaults on
 	// to the exported descriptions if present.
 	schema.SchemaDescriptionBuilder = func(s *schema.Schema) string {
 		desc := s.Description
-		//if s.Default != nil {
-		//	desc += fmt.Sprintf(" Defaults to `%v`.", s.Default)
-		//}
 		if s.ValidateDiagFunc != nil {
 			defer func() {
 				recover()
@@ -64,27 +58,18 @@ func init() {
 		if s.Deprecated != "" {
 			desc = fmt.Sprintf("%s **Deprecated.** %s", desc, s.Deprecated)
 		}
+
+		if s.Default != nil {
+			switch s.Type {
+			case schema.TypeString:
+				desc += fmt.Sprintf(" Defaults to `\"%v\"`.", s.Default)
+			default:
+				desc += fmt.Sprintf(" Defaults to `%v`.", s.Default)
+			}
+		}
 		return strings.TrimSpace(desc)
 	}
 }
-
-// DDAPPKeyEnvName name of env var for APP key
-const DDAPPKeyEnvName = "DD_APP_KEY"
-
-// DDAPIKeyEnvName name of env var for API key
-const DDAPIKeyEnvName = "DD_API_KEY"
-
-// DatadogAPPKeyEnvName name of env var for APP key
-const DatadogAPPKeyEnvName = "DATADOG_APP_KEY"
-
-// DatadogAPIKeyEnvName name of env var for API key
-const DatadogAPIKeyEnvName = "DATADOG_API_KEY"
-
-// APPKeyEnvVars names of env var for APP key
-var APPKeyEnvVars = []string{DDAPPKeyEnvName, DatadogAPPKeyEnvName}
-
-// APIKeyEnvVars names of env var for API key
-var APIKeyEnvVars = []string{DDAPIKeyEnvName, DatadogAPIKeyEnvName}
 
 // Provider returns the built datadog provider object
 func Provider() *schema.Provider {
@@ -93,55 +78,172 @@ func Provider() *schema.Provider {
 			"api_key": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				DefaultFunc: schema.MultiEnvDefaultFunc(APIKeyEnvVars, nil),
-				Description: "(Required unless validate is false) Datadog API key. This can also be set via the DD_API_KEY environment variable.",
+				Sensitive:   true,
+				Description: "Datadog API key. Required when `validate` is true unless authentication uses AWS WIF, a bearer token, or Terraform Dynamic Provider Credentials. This can also be set via the `DD_API_KEY` environment variable.",
 			},
 			"app_key": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				DefaultFunc: schema.MultiEnvDefaultFunc(APPKeyEnvVars, nil),
-				Description: "(Required unless validate is false) Datadog APP key. This can also be set via the DD_APP_KEY environment variable.",
+				Sensitive:   true,
+				Description: "Datadog application key. Required when `validate` is true unless authentication uses AWS WIF, a bearer token, or Terraform Dynamic Provider Credentials. This can also be set via the `DD_APP_KEY` environment variable.",
+			},
+			"bearer_token": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Sensitive:   true,
+				Description: "Datadog credential sent in the `Authorization: Bearer <token>` header. Accepts personal access tokens (`ddpat_*`) and service-account access tokens (`ddsat_*`). When set, the provider authenticates with `Authorization: Bearer <token>` instead of the `DD-API-KEY` / `DD-APPLICATION-KEY` headers. This can also be set via the `DD_BEARER_TOKEN` or `DATADOG_BEARER_TOKEN` environment variable.",
+			},
+			"workload_identity_token_tag": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Selects the HCP Terraform workload identity token tag for this provider configuration, for example DATADOG_ORG_A selects TFC_WORKLOAD_IDENTITY_TOKEN_DATADOG_ORG_A. When set, that token must be present and have a valid Datadog audience; no other token or environment authentication is used as fallback. Explicit API/application keys, bearer_token, or cloud_provider_type take precedence. When unset or empty, automatically tries the DATADOG tag and then the untagged token. Tags may contain only letters, numbers, and underscores; TYPE is reserved.",
 			},
 			"api_url": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				DefaultFunc: schema.MultiEnvDefaultFunc([]string{"DATADOG_HOST", "DD_HOST"}, nil),
-				Description: "The API URL. This can also be set via the DD_HOST environment variable. Note that this URL must not end with the /api/ path. For example, https://api.datadoghq.com/ is a correct value, while https://api.datadoghq.com/api/ is not. And if you're working with \"EU\" version of Datadog, use https://api.datadoghq.eu/.",
+				Description: "The API URL. This can also be set via the DD_HOST environment variable, and defaults to `https://api.datadoghq.com`. Note that this URL must not end with the `/api/` path. For example, `https://api.datadoghq.com/` is a correct value, while `https://api.datadoghq.com/api/` is not. And if you're working with \"EU\" version of Datadog, use `https://api.datadoghq.eu/`. Other Datadog region examples: `https://api.us5.datadoghq.com/`, `https://api.us3.datadoghq.com/` and `https://api.ddog-gov.com/`. See https://docs.datadoghq.com/getting_started/site/ for all available regions.",
 			},
 			"validate": {
-				Type:        schema.TypeBool,
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  "Enables credential validation during provider initialization. Valid values are [`true`, `false`]. Default is true. When false, initial credential validation is skipped.",
+				ValidateFunc: validation.StringInSlice([]string{"true", "false"}, true),
+			},
+			"cloud_provider_type": {
+				Type:        schema.TypeString,
 				Optional:    true,
-				Default:     true,
-				Description: "Enables validation of the provided API and APP keys during provider initialization. Default is true. When false, api_key and app_key won't be checked.",
+				Description: "Specifies the cloud provider used for cloud-provider-based authentication, enabling keyless access without API or app keys. Only [`aws`] is supported. This can also be set using the `DD_CLOUD_PROVIDER_TYPE` environment variable. This feature is in Preview. If you'd like to enable it for your organization, contact [support](https://docs.datadoghq.com/help/).",
+			},
+			"cloud_provider_region": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "The cloud provider region specifier; used for cloud-provider-based authentication. For example, `us-east-1` for AWS. When omitted for AWS, the region is loaded from the AWS SDK default configuration chain.",
+			},
+			"org_uuid": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "The organization UUID; required for AWS WIF. Optional for Terraform Dynamic Provider Credentials, but when configured it must match the organization UUID in the token audience. This can also be set using the `DD_ORG_UUID` environment variable. See the [Datadog API documentation](https://docs.datadoghq.com/api/v1/organizations/) for more information.",
+			},
+			"aws_access_key_id": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Sensitive:   true,
+				Description: "An optional explicit AWS access key ID used for cloud-provider-based authentication. This can also be set using the `AWS_ACCESS_KEY_ID` environment variable. When explicit credentials are omitted, the AWS SDK default credential chain is used.",
+			},
+			"aws_secret_access_key": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Sensitive:   true,
+				Description: "An optional explicit AWS secret access key used for cloud-provider-based authentication. This can also be set using the `AWS_SECRET_ACCESS_KEY` environment variable. It must be provided together with `aws_access_key_id`. Omit both fields to use the AWS SDK default credential chain.",
+			},
+			"aws_session_token": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Sensitive:   true,
+				Description: "An optional AWS session token used with explicit temporary credentials for cloud-provider-based authentication. This can also be set using the `AWS_SESSION_TOKEN` environment variable.",
 			},
 			"http_client_retry_enabled": {
-				Type:        schema.TypeBool,
-				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("DD_HTTP_CLIENT_RETRY_ENABLED", false),
-				Description: "Enables request retries on HTTP status codes 429 and 5xx.",
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  "Enables request retries on HTTP status codes 429 and 5xx. Valid values are [`true`, `false`]. Defaults to `true`.",
+				ValidateFunc: validation.StringInSlice([]string{"true", "false"}, true),
 			},
 			"http_client_retry_timeout": {
 				Type:        schema.TypeInt,
 				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("DD_HTTP_CLIENT_RETRY_TIMEOUT", nil),
-				Description: "The HTTP request retry timeout period.",
+				Description: "The HTTP request retry timeout period. Defaults to 60 seconds.",
+			},
+			"http_client_retry_backoff_multiplier": {
+				Type:        schema.TypeInt,
+				Optional:    true,
+				Description: "The HTTP request retry back off multiplier. Defaults to 2.",
+				ValidateDiagFunc: func(v any, p cty.Path) diag.Diagnostics {
+					value, ok := v.(int)
+					var diags diag.Diagnostics
+					if ok && value <= 0 {
+						return append(diags, diag.Diagnostic{
+							Severity: diag.Error,
+							Summary:  "Backoff multiplier must be greater than 0.",
+						})
+					}
+					return diags
+				},
+			},
+			"http_client_retry_backoff_base": {
+				Type:        schema.TypeInt,
+				Optional:    true,
+				Description: "The HTTP request retry back off base. Defaults to 2.",
+				ValidateDiagFunc: func(v any, p cty.Path) diag.Diagnostics {
+					value, ok := v.(int)
+					var diags diag.Diagnostics
+					if ok && value <= 0 {
+						return append(diags, diag.Diagnostic{
+							Severity: diag.Error,
+							Summary:  "Backoff base must be greater than 0.",
+						})
+					}
+					return diags
+				},
+			},
+			"http_client_retry_max_retries": {
+				Type:        schema.TypeInt,
+				Optional:    true,
+				Description: "The HTTP request maximum retry number. Defaults to 3.",
+				ValidateDiagFunc: func(v any, p cty.Path) diag.Diagnostics {
+					value, ok := v.(int)
+					var diags diag.Diagnostics
+					if ok && (value <= 0 || value > 5) {
+						return append(diags, diag.Diagnostic{
+							Severity: diag.Error,
+							Summary:  "Max retries must be between 0 and 5",
+						})
+					}
+					return diags
+				},
+			},
+			"http_client_retry_jitter": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Description:  "The maximum random delay added to each HTTP request retry. Defaults to 0 seconds.",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
+			"default_tags": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				MaxItems:    1,
+				Description: "[Experimental - Action Connections, Logs Indexes, Logs Pipelines, Monitors, Security Monitoring Rules, and Service Level Objectives only] Configuration block containing settings to apply default resource tags across all resources.",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"tags": {
+							Type:        schema.TypeMap,
+							Optional:    true,
+							Elem:        &schema.Schema{Type: schema.TypeString},
+							Description: "[Experimental - Action Connections, Logs Indexes, Logs Pipelines, Monitors, Security Monitoring Rules, and Service Level Objectives only] Resource tags to be applied by default across all resources.",
+						},
+					},
+				},
+			},
+			"ignore_tag_keys": {
+				Type:        schema.TypeSet,
+				Optional:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Description: "[Experimental - Monitors and Service Level Objectives only] Tag keys whose drift Terraform should ignore across all resources that support `ignore_tag_keys`. A resource's own `ignore_tag_keys` is merged with this list for that resource. Any `:value` suffix is ignored.",
 			},
 		},
 
+		// NEW RESOURCES ARE NOT ALLOWED TO BE ADDED HERE
+		// New resources must be implemented using the `terraform-plugin-framework`, and added to the `datadog/fwprovider` directory.
 		ResourcesMap: map[string]*schema.Resource{
-			"datadog_api_key":                              resourceDatadogApiKey(),
-			"datadog_application_key":                      resourceDatadogApplicationKey(),
+			"datadog_authn_mapping":                        resourceDatadogAuthnMapping(),
 			"datadog_child_organization":                   resourceDatadogChildOrganization(),
-			"datadog_dashboard":                            resourceDatadogDashboard(),
+			"datadog_cloud_configuration_rule":             resourceDatadogCloudConfigurationRule(),
+			"datadog_cloud_workload_security_agent_rule":   resourceDatadogCloudWorkloadSecurityAgentRule(),
+			"datadog_dashboard":                            resourceDatadogDashboardV2(),
 			"datadog_dashboard_json":                       resourceDatadogDashboardJSON(),
-			"datadog_dashboard_list":                       resourceDatadogDashboardList(),
+			"datadog_dashboard_v2":                         resourceDatadogDashboardV2Alias(),
+			"datadog_powerpack_v2":                         resourceDatadogPowerpackV2(),
 			"datadog_downtime":                             resourceDatadogDowntime(),
-			"datadog_integration_aws":                      resourceDatadogIntegrationAws(),
-			"datadog_integration_aws_tag_filter":           resourceDatadogIntegrationAwsTagFilter(),
-			"datadog_integration_aws_lambda_arn":           resourceDatadogIntegrationAwsLambdaArn(),
-			"datadog_integration_aws_log_collection":       resourceDatadogIntegrationAwsLogCollection(),
-			"datadog_integration_azure":                    resourceDatadogIntegrationAzure(),
-			"datadog_integration_gcp":                      resourceDatadogIntegrationGcp(),
+			"datadog_integration_opsgenie_service_object":  resourceDatadogIntegrationOpsgenieService(),
 			"datadog_integration_pagerduty":                resourceDatadogIntegrationPagerduty(),
 			"datadog_integration_pagerduty_service_object": resourceDatadogIntegrationPagerdutySO(),
 			"datadog_integration_slack_channel":            resourceDatadogIntegrationSlackChannel(),
@@ -156,79 +258,208 @@ func Provider() *schema.Provider {
 			"datadog_metric_metadata":                      resourceDatadogMetricMetadata(),
 			"datadog_metric_tag_configuration":             resourceDatadogMetricTagConfiguration(),
 			"datadog_monitor":                              resourceDatadogMonitor(),
+			"datadog_monitor_config_policy":                resourceDatadogMonitorConfigPolicy(),
 			"datadog_monitor_json":                         resourceDatadogMonitorJSON(),
 			"datadog_organization_settings":                resourceDatadogOrganizationSettings(),
+			"datadog_powerpack":                            resourceDatadogPowerpack(),
 			"datadog_role":                                 resourceDatadogRole(),
-			"datadog_security_monitoring_default_rule":     resourceDatadogSecurityMonitoringDefaultRule(),
-			"datadog_security_monitoring_rule":             resourceDatadogSecurityMonitoringRule(),
-			"datadog_security_monitoring_filter":           resourceDatadogSecurityMonitoringFilter(),
+			"datadog_sensitive_data_scanner_group":         resourceDatadogSensitiveDataScannerGroup(),
+			"datadog_sensitive_data_scanner_rule":          resourceDatadogSensitiveDataScannerRule(),
 			"datadog_service_level_objective":              resourceDatadogServiceLevelObjective(),
+			"datadog_service_definition_yaml":              resourceDatadogServiceDefinitionYAML(),
 			"datadog_slo_correction":                       resourceDatadogSloCorrection(),
 			"datadog_synthetics_test":                      resourceDatadogSyntheticsTest(),
-			"datadog_synthetics_global_variable":           resourceDatadogSyntheticsGlobalVariable(),
-			"datadog_synthetics_private_location":          resourceDatadogSyntheticsPrivateLocation(),
 			"datadog_user":                                 resourceDatadogUser(),
-			"datadog_webhook":                              resourceDatadogWebhook(),
-			"datadog_webhook_custom_variable":              resourceDatadogWebhookCustomVariable(),
 		},
 
+		// NEW DATA SOURCES ARE NOT ALLOWED TO BE ADDED HERE
+		// New data sources must be implemented using the `terraform-plugin-framework`, and added to the `datadog/fwprovider` directory.
 		DataSourcesMap: map[string]*schema.Resource{
-			"datadog_api_key":                     dataSourceDatadogApiKey(),
-			"datadog_application_key":             dataSourceDatadogApplicationKey(),
-			"datadog_dashboard":                   dataSourceDatadogDashboard(),
-			"datadog_dashboard_list":              dataSourceDatadogDashboardList(),
-			"datadog_ip_ranges":                   dataSourceDatadogIPRanges(),
-			"datadog_logs_indexes_order":          dataSourceDatadogLogsIndexesOrder(),
-			"datadog_monitor":                     dataSourceDatadogMonitor(),
-			"datadog_monitors":                    dataSourceDatadogMonitors(),
-			"datadog_permissions":                 dataSourceDatadogPermissions(),
-			"datadog_role":                        dataSourceDatadogRole(),
-			"datadog_roles":                       dataSourceDatadogRoles(),
-			"datadog_security_monitoring_rules":   dataSourceDatadogSecurityMonitoringRules(),
-			"datadog_security_monitoring_filters": dataSourceDatadogSecurityMonitoringFilters(),
-			"datadog_service_level_objective":     dataSourceDatadogServiceLevelObjective(),
-			"datadog_service_level_objectives":    dataSourceDatadogServiceLevelObjectives(),
-			"datadog_synthetics_locations":        dataSourceDatadogSyntheticsLocations(),
-			"datadog_synthetics_global_variable":  dataSourceDatadogSyntheticsGlobalVariable(),
-			"datadog_user":                        dataSourceDatadogUser(),
+			"datadog_cloud_workload_security_agent_rules":     dataSourceDatadogCloudWorkloadSecurityAgentRules(),
+			"datadog_dashboard":                               dataSourceDatadogDashboard(),
+			"datadog_integration_aws_logs_services":           dataSourceDatadogIntegrationAWSLogsServices(),
+			"datadog_logs_archives_order":                     dataSourceDatadogLogsArchivesOrder(),
+			"datadog_logs_indexes":                            dataSourceDatadogLogsIndexes(),
+			"datadog_logs_indexes_order":                      dataSourceDatadogLogsIndexesOrder(),
+			"datadog_logs_pipelines":                          dataSourceDatadogLogsPipelines(),
+			"datadog_monitor":                                 dataSourceDatadogMonitor(),
+			"datadog_monitors":                                dataSourceDatadogMonitors(),
+			"datadog_monitor_config_policies":                 dataSourceDatadogMonitorConfigPolicies(),
+			"datadog_permissions":                             dataSourceDatadogPermissions(),
+			"datadog_role":                                    dataSourceDatadogRole(),
+			"datadog_roles":                                   dataSourceDatadogRoles(),
+			"datadog_security_monitoring_rules":               dataSourceDatadogSecurityMonitoringRules(),
+			"datadog_security_monitoring_filters":             dataSourceDatadogSecurityMonitoringFilters(),
+			"datadog_sensitive_data_scanner_standard_pattern": dataSourceDatadogSensitiveDataScannerStandardPattern(),
+			"datadog_service_level_objective":                 dataSourceDatadogServiceLevelObjective(),
+			"datadog_service_level_objectives":                dataSourceDatadogServiceLevelObjectives(),
+			"datadog_synthetics_test":                         dataSourceDatadogSyntheticsTest(),
+			"datadog_user":                                    dataSourceDatadogUser(),
 		},
 
 		ConfigureContextFunc: providerConfigure,
+	}
+
+	// Annotate each SDKv2 resource's auth context with its type name.
+	for name, r := range utils.DatadogProvider.ResourcesMap {
+		annotateSDKv2ResourceCRUD(r, name)
+	}
+
+	if utils.UseMonitorFrameworkProvider() {
+		delete(utils.DatadogProvider.ResourcesMap, "datadog_monitor")
 	}
 
 	return utils.DatadogProvider
 }
 
 // ProviderConfiguration contains the initialized API clients to communicate with the Datadog API
+// as well as global configuration like default tags to apply to all resources.
 type ProviderConfiguration struct {
-	CommunityClient *datadogCommunity.Client
-	DatadogClientV1 *datadogV1.APIClient
-	DatadogClientV2 *datadogV2.APIClient
-	AuthV1          context.Context
-	AuthV2          context.Context
+	CommunityClient     *datadogCommunity.Client
+	DatadogApiInstances *utils.ApiInstances
+	Auth                context.Context
+	DefaultTags         map[string]interface{}
+	IgnoreTagKeys       []string
 
 	Now func() time.Time
 }
 
-func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
-	apiKey := d.Get("api_key").(string)
-	appKey := d.Get("app_key").(string)
-	validate := d.Get("validate").(bool)
-	httpRetryEnabled := d.Get("http_client_retry_enabled").(bool)
+// annotateSDKv2ResourceCRUD wraps the CRUD functions of an SDKv2 resource to
+// add the resource type name to the auth context.
+func annotateSDKv2ResourceCRUD(r *schema.Resource, name string) {
+	if orig := r.CreateContext; orig != nil {
+		r.CreateContext = func(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+			return orig(ctx, d, withResourceName(meta, name))
+		}
+	}
+	if orig := r.ReadContext; orig != nil {
+		r.ReadContext = func(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+			return orig(ctx, d, withResourceName(meta, name))
+		}
+	}
+	if orig := r.UpdateContext; orig != nil {
+		r.UpdateContext = func(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+			return orig(ctx, d, withResourceName(meta, name))
+		}
+	}
+	if orig := r.DeleteContext; orig != nil {
+		r.DeleteContext = func(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+			return orig(ctx, d, withResourceName(meta, name))
+		}
+	}
+}
 
-	if validate && (apiKey == "" || appKey == "") {
-		return nil, diag.FromErr(errors.New("api_key and app_key must be set unless validate = false"))
+// withResourceName returns a shallow copy of the ProviderConfiguration with
+// the auth context annotated with the given resource name.
+func withResourceName(meta interface{}, name string) interface{} {
+	pc := *meta.(*ProviderConfiguration)
+	pc.Auth = utils.WithTerraformResource(pc.Auth, name)
+	return &pc
+}
+
+func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
+	// Unknown explicit credentials must not silently select an environment identity.
+	rawAuth := d.GetRawConfig()
+	for _, name := range []string{"cloud_provider_type", "bearer_token", "api_key", "app_key"} {
+		if !rawAuth.IsNull() && rawAuth.IsKnown() && rawAuth.Type().HasAttribute(name) && !rawAuth.GetAttr(name).IsKnown() {
+			return nil, diag.Errorf("%s must be known before configuring provider authentication", name)
+		}
+		if (name == "cloud_provider_type" || name == "bearer_token") && d.Get(name).(string) != "" {
+			break
+		}
+	}
+	// Capture provider-block authentication before resolving environment defaults.
+	hasExplicitAuth := d.Get("api_key").(string) != "" || d.Get("app_key").(string) != "" ||
+		d.Get("bearer_token").(string) != "" || d.Get("cloud_provider_type").(string) != ""
+	apiKey := d.Get("api_key").(string)
+	if apiKey == "" {
+		apiKey, _ = utils.GetMultiEnvVar(utils.APIKeyEnvVars[:]...)
+	}
+
+	appKey := d.Get("app_key").(string)
+	if appKey == "" {
+		appKey, _ = utils.GetMultiEnvVar(utils.APPKeyEnvVars[:]...)
+	}
+
+	bearerToken := d.Get("bearer_token").(string)
+	if bearerToken == "" && !hasExplicitAuth {
+		bearerToken, _ = utils.GetMultiEnvVar(utils.BearerTokenEnvVars...)
+	}
+
+	apiURL := d.Get("api_url").(string)
+	if apiURL == "" {
+		apiURL, _ = utils.GetMultiEnvVar(utils.APIUrlEnvVars[:]...)
+	}
+
+	// Cloud provider auth specific variables
+	cloudProviderType := d.Get("cloud_provider_type").(string)
+	if cloudProviderType == "" && !hasExplicitAuth {
+		cloudProviderType, _ = utils.GetMultiEnvVar(utils.CloudProviderTypeEnvVars...)
+	}
+	cloudProviderRegion := d.Get("cloud_provider_region").(string)
+	orgUUID := d.Get("org_uuid").(string)
+	if orgUUID == "" {
+		orgUUID, _ = utils.GetMultiEnvVar(utils.OrgUUIDEnvVars[:]...)
+	}
+	var workloadIdentityConfig *datadog.DelegatedTokenConfig
+	if !hasExplicitAuth {
+		// An unknown selector must not become empty and select the default identity.
+		raw := d.GetRawConfig()
+		if !raw.IsNull() && raw.IsKnown() && raw.Type().HasAttribute("workload_identity_token_tag") &&
+			!raw.GetAttr("workload_identity_token_tag").IsKnown() {
+			return nil, diag.Errorf("workload_identity_token_tag must be known before configuring the provider")
+		}
+		var err error
+		workloadIdentityConfig, err = terraformauth.GetDelegatedTokenConfig(orgUUID, d.Get("workload_identity_token_tag").(string))
+		if err != nil {
+			return nil, diag.FromErr(err)
+		}
+	}
+	awsAccessKeyId := d.Get("aws_access_key_id").(string)
+	if awsAccessKeyId == "" {
+		awsAccessKeyId, _ = utils.GetMultiEnvVar(utils.AWSAccessKeyId)
+	}
+	awsSecretAccessKey := d.Get("aws_secret_access_key").(string)
+	if awsSecretAccessKey == "" {
+		awsSecretAccessKey, _ = utils.GetMultiEnvVar(utils.AWSSecretAccessKey)
+	}
+	awsSessionToken := d.Get("aws_session_token").(string)
+	if awsSessionToken == "" {
+		awsSessionToken, _ = utils.GetMultiEnvVar(utils.AWSSessionToken)
+	}
+
+	httpRetryEnabled := true
+	httpRetryEnabledStr := d.Get("http_client_retry_enabled").(string)
+	if httpRetryEnabledStr == "" {
+		envVal, err := utils.GetMultiEnvVar(utils.DDHTTPRetryEnabled)
+		if err == nil {
+			httpRetryEnabled, _ = strconv.ParseBool(envVal)
+		}
+	} else {
+		httpRetryEnabled, _ = strconv.ParseBool(httpRetryEnabledStr)
+	}
+
+	validate := true
+	if v := d.Get("validate").(string); v != "" {
+		validate, _ = strconv.ParseBool(v)
+	}
+
+	if validate && workloadIdentityConfig == nil {
+		if cloudProviderType == "" && bearerToken == "" && (apiKey == "" || appKey == "") {
+			return nil, diag.FromErr(errors.New("credentials are required unless validate = false: configure api_key and app_key, bearer_token, AWS WIF, or Terraform Dynamic Provider Credentials"))
+		} else if cloudProviderType != "" && orgUUID == "" {
+			return nil, diag.FromErr(errors.New("orgUUID must be set when using cloud provider auth unless validate = false"))
+		}
 	}
 
 	// Initialize the community client
 	communityClient := datadogCommunity.NewClient(apiKey, appKey)
 
-	if apiURL := d.Get("api_url").(string); apiURL != "" {
+	if apiURL != "" {
 		communityClient.SetBaseUrl(apiURL)
 	}
 
 	c := cleanhttp.DefaultClient()
-	c.Transport = logging.NewTransport("Datadog", c.Transport)
 	communityClient.ExtraHeader["User-Agent"] = utils.GetUserAgent(fmt.Sprintf(
 		"datadog-api-client-go/%s (go %s; os %s; arch %s)",
 		"go-datadog-api",
@@ -238,60 +469,118 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 	))
 	communityClient.HttpClient = c
 
-	if validate {
-		log.Println("[INFO] Datadog client successfully initialized, now validating...")
-		ok, err := communityClient.Validate()
-		if err != nil {
-			log.Printf("[ERROR] Datadog Client validation error: %v", err)
-			return nil, diag.FromErr(err)
-		} else if !ok {
-			err := errors.New(`Invalid or missing credentials provided to the Datadog Provider. Please confirm your API and APP keys are valid and are for the correct region, see https://www.terraform.io/docs/providers/datadog/ for more information on providing credentials for the Datadog Provider`)
-			log.Printf("[ERROR] Datadog Client validation error: %v", err)
-			return nil, diag.FromErr(err)
-		}
-	} else {
-		log.Println("[INFO] Skipping key validation (validate = false)")
-	}
-	log.Printf("[INFO] Datadog Client successfully validated.")
-
-	// Initialize http.Client for the Datadog API Clients
-	httpClientV1 := http.DefaultClient
-	httpClientV2 := http.DefaultClient
-	if httpRetryEnabled {
-		ctOptions := transport.CustomTransportOptions{}
-		if v, ok := d.GetOk("http_client_retry_timeout"); ok {
-			timeout := time.Duration(int64(v.(int))) * time.Second
-			ctOptions.Timeout = &timeout
-		}
-		customTransportV1 := transport.NewCustomTransport(httpClientV1.Transport, ctOptions)
-		customTransportV2 := transport.NewCustomTransport(httpClientV2.Transport, ctOptions)
-		httpClientV1.Transport = customTransportV1
-		httpClientV2.Transport = customTransportV2
-	}
-
 	// Initialize the official Datadog V1 API client
-	authV1 := context.WithValue(
-		context.Background(),
-		datadogV1.ContextAPIKeys,
-		map[string]datadogV1.APIKey{
-			"apiKeyAuth": {
-				Key: apiKey,
+	datadogHTTPClient := utils.NewHTTPClient()
+	auth := context.Background()
+	// Explicit provider authentication wins; otherwise prefer Terraform workload identity over environment credentials.
+	switch {
+	case workloadIdentityConfig != nil:
+		auth = context.WithValue(auth, datadog.ContextDelegatedToken, &datadog.DelegatedTokenCredentials{})
+	case cloudProviderType != "":
+		// Allows for delegated token authentication
+		auth = context.WithValue(
+			auth,
+			datadog.ContextDelegatedToken,
+			&datadog.DelegatedTokenCredentials{},
+		)
+		switch cloudProviderType {
+		case "aws":
+			if err := cloudauth.ValidateAWSCredentials(awsAccessKeyId, awsSecretAccessKey, awsSessionToken); err != nil {
+				return nil, diag.FromErr(err)
+			}
+			auth = context.WithValue(
+				auth,
+				datadog.ContextAWSVariables,
+				map[string]string{
+					datadog.AWSAccessKeyIdName:     awsAccessKeyId,
+					datadog.AWSSecretAccessKeyName: awsSecretAccessKey,
+					datadog.AWSSessionTokenName:    awsSessionToken,
+				},
+			)
+		default:
+			return nil, diag.FromErr(errors.New("cloud_provider_type must be set to a valid value unless validate = false"))
+		}
+	case bearerToken != "":
+		// bearer_token takes precedence over api_key/app_key when both are set:
+		// a configured bearer token is an explicit signal to use Bearer auth.
+		auth = context.WithValue(auth, datadog.ContextAccessToken, bearerToken)
+	case apiKey != "" || appKey != "":
+		auth = context.WithValue(
+			auth,
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {
+					Key: apiKey,
+				},
+				"appKeyAuth": {
+					Key: appKey,
+				},
 			},
-			"appKeyAuth": {
-				Key: appKey,
-			},
-		},
-	)
-	configV1 := datadogV1.NewConfiguration()
-	configV1.HTTPClient = httpClientV1
-	// Enable unstable operations
-	configV1.SetUnstableOperationEnabled("CreateSLOCorrection", true)
-	configV1.SetUnstableOperationEnabled("GetSLOCorrection", true)
-	configV1.SetUnstableOperationEnabled("UpdateSLOCorrection", true)
-	configV1.SetUnstableOperationEnabled("DeleteSLOCorrection", true)
-	configV1.UserAgent = utils.GetUserAgent(configV1.UserAgent)
-	configV1.Debug = logging.IsDebugOrHigher()
-	if apiURL := d.Get("api_url").(string); apiURL != "" {
+		)
+	}
+
+	config := datadog.NewConfiguration()
+	config.RetryConfiguration.EnableRetry = httpRetryEnabled
+
+	if timeoutInterface, ok := d.GetOk("http_client_retry_timeout"); ok {
+		timeout := time.Duration(int64(timeoutInterface.(int))) * time.Second
+		config.RetryConfiguration.HTTPRetryTimeout = timeout
+	} else {
+		envVal, err := utils.GetMultiEnvVar(utils.DDHTTPRetryTimeout)
+		if err == nil {
+			vInt, _ := strconv.Atoi(envVal)
+			timeout := time.Duration(int64(vInt)) * time.Second
+			config.RetryConfiguration.HTTPRetryTimeout = timeout
+		}
+	}
+
+	if backoffMultiplierInterface, ok := d.GetOk("http_client_retry_backoff_multiplier"); ok {
+		backOffMultiplier := float64(backoffMultiplierInterface.(int))
+		config.RetryConfiguration.BackOffMultiplier = backOffMultiplier
+	} else {
+		envVal, err := utils.GetMultiEnvVar(utils.DDHTTPRetryBackoffMultiplier)
+		if err == nil {
+			fVal, _ := strconv.ParseFloat(envVal, 64)
+			config.RetryConfiguration.BackOffMultiplier = fVal
+		}
+	}
+
+	if retryBackoffBaseInterface, ok := d.GetOk("http_client_retry_backoff_base"); ok {
+		retryBackoffBase := float64(retryBackoffBaseInterface.(int))
+		config.RetryConfiguration.BackOffBase = retryBackoffBase
+	} else {
+		envVal, err := utils.GetMultiEnvVar(utils.DDHTTPRetryBackoffBase)
+		if err == nil {
+			fVal, _ := strconv.ParseFloat(envVal, 64)
+			config.RetryConfiguration.BackOffBase = fVal
+		}
+	}
+
+	if maxRetryInterface, ok := d.GetOk("http_client_retry_max_retries"); ok {
+		config.RetryConfiguration.MaxRetries = maxRetryInterface.(int)
+	} else {
+		envVal, err := utils.GetMultiEnvVar(utils.DDHTTPRetryMaxRetries)
+		if err == nil {
+			fVal, _ := strconv.Atoi(envVal)
+			config.RetryConfiguration.MaxRetries = fVal
+		}
+	}
+
+	if retryJitterInterface, ok := d.GetOk("http_client_retry_jitter"); ok {
+		config.RetryConfiguration.RetryJitter = time.Duration(retryJitterInterface.(int)) * time.Second
+	} else {
+		envVal, err := utils.GetMultiEnvVar(utils.DDHTTPRetryJitter)
+		if err == nil {
+			vInt, _ := strconv.Atoi(envVal)
+			config.RetryConfiguration.RetryJitter = time.Duration(vInt) * time.Second
+		}
+	}
+
+	config.UserAgent = utils.GetUserAgent(config.UserAgent)
+	// The SDK debug logger does not redact ContextDelegatedToken credentials.
+	// Suppress raw HTTP dumps for WIT authentication until SDK redaction supports it.
+	config.Debug = logging.IsDebugOrHigher() && workloadIdentityConfig == nil
+	if apiURL != "" {
 		parsedAPIURL, parseErr := url.Parse(apiURL)
 		if parseErr != nil {
 			return nil, diag.Errorf(`invalid API URL : %v`, parseErr)
@@ -300,8 +589,8 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 			return nil, diag.Errorf(`missing protocol or host : %v`, apiURL)
 		}
 		// If api url is passed, set and use the api name and protocol on ServerIndex{1}
-		authV1 = context.WithValue(authV1, datadogV1.ContextServerIndex, 1)
-		authV1 = context.WithValue(authV1, datadogV1.ContextServerVariables, map[string]string{
+		auth = context.WithValue(auth, datadog.ContextServerIndex, 1)
+		auth = context.WithValue(auth, datadog.ContextServerVariables, map[string]string{
 			"name":     parsedAPIURL.Host,
 			"protocol": parsedAPIURL.Scheme,
 		})
@@ -313,68 +602,195 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 		if len(ipRangesDNSNameArr) > 2 {
 			ipRangesDNSNameArr = ipRangesDNSNameArr[1:]
 		}
-		ipRangesDNSNameArr = append([]string{baseIPRangesSubdomain}, ipRangesDNSNameArr...)
+		ipRangesDNSNameArr = append([]string{utils.BaseIPRangesSubdomain}, ipRangesDNSNameArr...)
 
-		authV1 = context.WithValue(authV1, datadogV1.ContextOperationServerIndices, map[string]int{
-			"IPRangesApiService.GetIPRanges": 1,
+		auth = context.WithValue(auth, datadog.ContextOperationServerIndices, map[string]int{
+			"v1.IPRangesApi.GetIPRanges": 1,
 		})
-		authV1 = context.WithValue(authV1, datadogV1.ContextOperationServerVariables, map[string]map[string]string{
-			"IPRangesApiService.GetIPRanges": {
+		auth = context.WithValue(auth, datadog.ContextOperationServerVariables, map[string]map[string]string{
+			"v1.IPRangesApi.GetIPRanges": {
 				"name": strings.Join(ipRangesDNSNameArr, "."),
 			},
 		})
 	}
 
-	datadogClientV1 := datadogV1.NewAPIClient(configV1)
-
-	// Initialize the official Datadog V2 API client
-	authV2 := context.WithValue(
-		context.Background(),
-		datadogV2.ContextAPIKeys,
-		map[string]datadogV2.APIKey{
-			"apiKeyAuth": {
-				Key: d.Get("api_key").(string),
-			},
-			"appKeyAuth": {
-				Key: d.Get("app_key").(string),
-			},
-		},
-	)
-	configV2 := datadogV2.NewConfiguration()
-	configV2.HTTPClient = httpClientV2
-	// Enable unstable operations
-	configV2.SetUnstableOperationEnabled("CreateTagConfiguration", true)
-	configV2.SetUnstableOperationEnabled("DeleteTagConfiguration", true)
-	configV2.SetUnstableOperationEnabled("ListTagConfigurationByName", true)
-	configV2.SetUnstableOperationEnabled("UpdateTagConfiguration", true)
-
-	configV2.UserAgent = utils.GetUserAgent(configV2.UserAgent)
-	configV2.Debug = logging.IsDebugOrHigher()
-	if apiURL := d.Get("api_url").(string); apiURL != "" {
-		parsedAPIURL, parseErr := url.Parse(apiURL)
-		if parseErr != nil {
-			return nil, diag.Errorf(`invalid API URL : %v`, parseErr)
+	config.HTTPClient = datadogHTTPClient
+	if workloadIdentityConfig != nil {
+		config.DelegatedTokenConfig = workloadIdentityConfig
+	} else if cloudProviderType != "" {
+		switch cloudProviderType {
+		case "aws":
+			provider, err := cloudauth.NewAWSProvider(cloudauth.AWSConfig{
+				Region:     cloudProviderRegion,
+				HTTPClient: datadogHTTPClient,
+			})
+			if err != nil {
+				return nil, diag.FromErr(err)
+			}
+			config.DelegatedTokenConfig = &datadog.DelegatedTokenConfig{
+				OrgUUID:      orgUUID,
+				ProviderAuth: provider,
+				Provider:     datadog.ProviderAWS,
+			}
 		}
-		if parsedAPIURL.Host == "" || parsedAPIURL.Scheme == "" {
-			return nil, diag.Errorf(`missing protocol or host : %v`, apiURL)
-		}
-		// If api url is passed, set and use the api name and protocol on ServerIndex{1}
-		authV2 = context.WithValue(authV2, datadogV2.ContextServerIndex, 1)
-		authV2 = context.WithValue(authV2, datadogV2.ContextServerVariables, map[string]string{
-			"name":     parsedAPIURL.Host,
-			"protocol": parsedAPIURL.Scheme,
-		})
 	}
 
-	datadogClientV2 := datadogV2.NewAPIClient(configV2)
+	datadogClient := datadog.NewAPIClient(config)
+	apiInstances := &utils.ApiInstances{HttpClient: datadogClient}
+	if validate {
+		log.Println("[INFO] Datadog client successfully initialized, now validating...")
+		// Validate the selected delegated credentials without falling back on failure.
+		switch {
+		case config.DelegatedTokenConfig != nil:
+			delegatedConfig, err := datadogClient.GetDelegatedToken(auth)
+			if err != nil {
+				log.Printf("[ERROR] Datadog Client validation error: %v", err)
+				return nil, diag.FromErr(err)
+			}
+			if delegatedConfig.DelegatedToken == "" {
+				msg := fmt.Sprintf(`Invalid or missing credentials provided to the Datadog Provider. Please confirm your OrgUUID is correct and your cloud auth credentials for %q are valid and are for the correct region, see https://www.terraform.io/docs/providers/datadog/ for more information on providing credentials for the Datadog Provider`, config.DelegatedTokenConfig.Provider)
+				err := errors.New(msg)
+				log.Printf("[ERROR] Datadog Client validation error: %v", err)
+				return nil, diag.FromErr(err)
+			}
+		case bearerToken != "":
+			// bearer_token takes precedence over api_key/app_key (matches the auth
+			// context selection above). /api/v1/validate is API-key-only, so hit
+			// /api/v2/validate_keys with the bearer token in the DD-APPLICATION-KEY
+			// slot — the authn-validation backend accepts PATs/SATs there.
+			validateAuth := context.WithValue(auth, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+				"appKeyAuth": {Key: bearerToken},
+			})
+			if _, _, err := apiInstances.GetKeyManagementApiV2().ValidateAPIKey(validateAuth); err != nil {
+				log.Printf("[ERROR] Datadog Client validation error: %v", err)
+				return nil, diag.FromErr(err)
+			}
+		case apiKey != "" || appKey != "": // Validate the API and APP keys
+			resp, _, err := apiInstances.GetAuthenticationApiV1().Validate(auth)
+			if err != nil {
+				log.Printf("[ERROR] Datadog Client validation error: %v", err)
+				return nil, diag.FromErr(err)
+			}
+			valid, ok := resp.GetValidOk()
+			if (ok && !*valid) || !ok {
+				err := errors.New(`Invalid or missing credentials provided to the Datadog Provider. Please confirm your API and APP keys are valid and are for the correct region, see https://www.terraform.io/docs/providers/datadog/ for more information on providing credentials for the Datadog Provider`)
+				log.Printf("[ERROR] Datadog Client validation error: %v", err)
+				return nil, diag.FromErr(err)
+			}
+		}
+	} else {
+		log.Println("[INFO] Skipping key validation (validate = false)")
+	}
+	log.Printf("[INFO] Datadog Client successfully validated.")
 
-	return &ProviderConfiguration{
-		CommunityClient: communityClient,
-		DatadogClientV1: datadogClientV1,
-		DatadogClientV2: datadogClientV2,
-		AuthV1:          authV1,
-		AuthV2:          authV2,
+	providerConfig := ProviderConfiguration{
+		CommunityClient:     communityClient,
+		DatadogApiInstances: apiInstances,
+		Auth:                auth,
 
 		Now: time.Now,
-	}, nil
+	}
+	if v, ok := d.GetOk("default_tags"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		tagConfig := v.([]interface{})[0].(map[string]interface{})
+		tags, ok := tagConfig["tags"]
+		if ok {
+			providerConfig.DefaultTags = tags.(map[string]interface{})
+		}
+	}
+	if v, ok := d.GetOk("ignore_tag_keys"); ok {
+		for _, k := range v.(*schema.Set).List() {
+			providerConfig.IgnoreTagKeys = append(providerConfig.IgnoreTagKeys, k.(string))
+		}
+	}
+
+	return &providerConfig, nil
+}
+
+// ignoreTagKeysDiff pins any tag key listed in ignore_tag_keys to its prior state value, so
+// Terraform reports no drift on those keys and apply doesn't strip them when they're managed
+// out-of-band. Precedence: the resource-level ignore_tag_keys is unioned with the provider-level
+// ignore_tag_keys; the effective set is the union of both lists. Only wired on resources that
+// declare the attribute, and must run before tagDiff so default_tags merges over the
+// ignore-filtered set.
+func ignoreTagKeysDiff(_ context.Context, d *schema.ResourceDiff, meta interface{}) error {
+	providerConf := meta.(*ProviderConfiguration)
+
+	ignoreKeys := append([]string{}, providerConf.IgnoreTagKeys...)
+	if raw, ok := d.GetOk("ignore_tag_keys"); ok {
+		for _, v := range raw.(*schema.Set).List() {
+			ignoreKeys = append(ignoreKeys, v.(string))
+		}
+	}
+	if len(ignoreKeys) == 0 {
+		return nil
+	}
+
+	oldRaw, newRaw := d.GetChange("tags")
+	planSet, ok := newRaw.(*schema.Set)
+	if !ok || planSet == nil {
+		return nil
+	}
+	planTags := make([]string, 0, planSet.Len())
+	for _, v := range planSet.List() {
+		planTags = append(planTags, v.(string))
+	}
+	var stateTags []string
+	if stateSet, ok := oldRaw.(*schema.Set); ok && stateSet != nil {
+		stateTags = make([]string, 0, stateSet.Len())
+		for _, v := range stateSet.List() {
+			stateTags = append(stateTags, v.(string))
+		}
+	}
+
+	filtered := utils.StripIgnoredTags(planTags, stateTags, ignoreKeys)
+	filteredIface := make([]interface{}, len(filtered))
+	for i, s := range filtered {
+		filteredIface[i] = s
+	}
+	if err := d.SetNew("tags", schema.NewSet(planSet.F, filteredIface)); err != nil {
+		return fmt.Errorf("error applying ignore_tag_keys: %w", err)
+	}
+	return nil
+}
+
+// custom diff function that changes plan to take default tags into account
+func tagDiff(ctx context.Context, d *schema.ResourceDiff, meta interface{}) error {
+	providerConf := meta.(*ProviderConfiguration)
+	if len(providerConf.DefaultTags) == 0 {
+		return nil
+	}
+	resourceTags := d.Get("tags") // reads the ignore-filtered set when ignoreTagKeysDiff ran first; the resource tags otherwise.
+	if resourceTags == nil {      // if the "tags" attribute does not exist in the resource schema
+		return nil
+	}
+	tags := make(map[string]interface{})
+	tagSet := resourceTags.(*schema.Set)
+	for _, tag := range tagSet.List() {
+		key, value, _ := strings.Cut(tag.(string), ":")
+		oldVal, ok := tags[key]
+		if !ok {
+			oldVal = []string{}
+		}
+		tags[key] = append(oldVal.([]string), value)
+	}
+	for k, v := range providerConf.DefaultTags {
+		if _, alreadyDefined := tags[k]; !alreadyDefined {
+			tags[k] = []string{v.(string)}
+		}
+	}
+	tagSlice := make([]interface{}, 0, len(tags))
+	for k, vals := range tags {
+		for _, v := range vals.([]string) {
+			tag := fmt.Sprintf("%s:%v", k, v)
+			if v == "" {
+				tag = k
+			}
+			tagSlice = append(tagSlice, tag)
+		}
+	}
+	tagsToSet := schema.NewSet(tagSet.F, tagSlice)
+	if err := d.SetNew("tags", tagsToSet); err != nil {
+		return fmt.Errorf("error setting tags diff to %v: %w", tags, err)
+	}
+	return nil
 }

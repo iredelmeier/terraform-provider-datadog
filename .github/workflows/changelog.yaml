@@ -1,0 +1,40 @@
+name: "Ensure labels"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+on: # yamllint disable-line rule:truthy
+  pull_request:
+    types:
+      - labeled
+      - unlabeled
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - edited
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check changelog label
+        if: github.event.pull_request.draft == false && false == contains(join(github.event.pull_request.labels.*.name, ','), 'changelog/')
+        run: |-
+          echo "::error::Add 'changelog/*' label";
+          exit 1;
+      - name: Check PR title
+        if: github.event.pull_request.draft == false && false == contains(join(github.event.pull_request.labels.*.name, ','), 'changelog/note') && false == contains(join(github.event.pull_request.labels.*.name, ','), 'changelog/no-changelog')
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const re = /^\[(?:datadog_\w+|generated)\] .+/;
+            const title = context.payload.pull_request.title;
+            if (!re.test(title)) {
+              core.setFailed(
+                "Invalid PR title format. Expected: '[datadog_<resource_or_datasource>] <Description>' or '[generated] <Description>'.\n" +
+                "PR titles are used to generate CHANGELOG entries. The '[generated]' tag is reserved for automated tfgen pull requests; all other changes must name the main affected resource or data source (e.g. '[datadog_monitor]', '[datadog_logs_index]').\n" +
+                "If this change does not need to be included in the changelog, add the 'changelog/no-changelog' label to skip this check."
+              );
+            }

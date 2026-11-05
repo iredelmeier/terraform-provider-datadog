@@ -1,0 +1,204 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 878
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: |
+            {"data":{"attributes":{"components":[{"events":[],"name":"grid0","properties":{"children":[]},"type":"grid"}],"connections":[{"id":"11111111-1111-1111-1111-111111111111","name":"A connection that will be overridden"}],"deployment":{"app_version_id":"00000000-0000-0000-0000-000000000000","id":"11111111-1111-1111-1111-111111111111"},"description":"Created using the Datadog provider in Terraform.","favorite":false,"id":"39f78efa-ef92-58b9-b6e6-e692655cf4db","name":"tf-TestAccDatadogAppBuilderAppResource_Inline_WithOptionalFields_Import-local-1792670099","queries":[{"events":[],"id":"22a65cea-b96f-44fa-a1e2-008885d7bd2e","name":"listTeams0","properties":{"spec":{"connectionId":"11111111-2222-3333-4444-555555555555","fqn":"com.datadoghq.dd.teams.listTeams","inputs":{}}},"type":"action"}],"rootInstanceName":"grid0","selfService":false,"tags":[]},"type":"appDefinitions"}}
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/app-builder/apps
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding: []
+        trailer: {}
+        content_length: 78
+        uncompressed: false
+        body: '{"data":{"id":"39f78efa-ef92-58b9-b6e6-e692655cf4db","type":"appDefinitions"}}'
+        headers:
+            Content-Type:
+                - application/vnd.api+json
+        status: 201 Created
+        code: 201
+        duration: 404.431257ms
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/app-builder/apps/39f78efa-ef92-58b9-b6e6-e692655cf4db/deployment
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding: []
+        trailer: {}
+        content_length: 592
+        uncompressed: false
+        body: '{"data":{"id":"809863ea-921e-4ea4-8382-560c3cf1209b","type":"deployment","attributes":{"app_version_id":"62204658-c619-4f23-a599-2f3e29f0bb1e","approved_at":"2026-10-22T11:55:03.424541Z","approving_user_id":1445416,"approving_user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","created_at":"2026-10-22T11:55:03.424541Z","creator_user_id":1445416,"creator_user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","description":null,"title":null},"meta":{"created_at":"2026-10-22T11:55:03.424541Z","user_id":1445416,"user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","user_name":"frog@datadoghq.com"}}}'
+        headers:
+            Content-Type:
+                - application/vnd.api+json
+        status: 201 Created
+        code: 201
+        duration: 421.697771ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/app-builder/apps/39f78efa-ef92-58b9-b6e6-e692655cf4db
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding: []
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: '{"data":{"id":"39f78efa-ef92-58b9-b6e6-e692655cf4db","type":"appDefinitions","attributes":{"components":[{"events":[],"name":"grid0","properties":{"children":[]},"type":"grid"}],"description":"Created using the Datadog provider in Terraform.","favorite":false,"isHighCodeApp":false,"name":"tf-TestAccDatadogAppBuilderAppResource_Inline_WithOptionalFields_Import-local-1792670099","protectionLevel":"direct_publish","queries":[{"id":"22a65cea-b96f-44fa-a1e2-008885d7bd2e","name":"listTeams0","type":"action","properties":{"spec":{"connectionId":"11111111-2222-3333-4444-555555555555","fqn":"com.datadoghq.dd.teams.listTeams","inputs":{}}}}],"rootInstanceName":"grid0","selfService":false,"tags":[]},"relationships":{"deployment":{"data":{"id":"809863ea-921e-4ea4-8382-560c3cf1209b","type":"deployment"},"meta":{"created_at":"2026-10-22T11:55:03.424541Z","user_id":1445416,"user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","user_name":""}}},"meta":{"org_id":321813,"user_id":1445416,"user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","user_name":"frog@datadoghq.com","version":1,"version_id":"62204658-c619-4f23-a599-2f3e29f0bb1e","updated_since_deployment":false,"created_at":"2026-10-22T11:55:02.982641Z","updated_at":"2026-10-22T11:55:02.982641Z","deleted_at":"0001-01-01T00:00:00Z","run_as_user":"3ad549bf-eba0-11e9-a77a-0705486660d0"}},"included":[{"id":"809863ea-921e-4ea4-8382-560c3cf1209b","type":"deployment","attributes":{"app_version_id":"62204658-c619-4f23-a599-2f3e29f0bb1e","approved_at":"2026-10-22T11:55:03.424541Z","approving_user_id":1445416,"approving_user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","created_at":"2026-10-22T11:55:03.424541Z","creator_user_id":1445416,"creator_user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","description":null,"title":null},"meta":{"created_at":"2026-10-22T11:55:03.424541Z","user_id":1445416,"user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","user_name":""}}]}'
+        headers:
+            Content-Type:
+                - application/vnd.api+json
+        status: 200 OK
+        code: 200
+        duration: 253.658723ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/app-builder/apps/39f78efa-ef92-58b9-b6e6-e692655cf4db
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding: []
+        trailer: {}
+        content_length: -1
+        uncompressed: true
+        body: '{"data":{"id":"39f78efa-ef92-58b9-b6e6-e692655cf4db","type":"appDefinitions","attributes":{"components":[{"events":[],"name":"grid0","properties":{"children":[]},"type":"grid"}],"description":"Created using the Datadog provider in Terraform.","favorite":false,"isHighCodeApp":false,"name":"tf-TestAccDatadogAppBuilderAppResource_Inline_WithOptionalFields_Import-local-1792670099","protectionLevel":"direct_publish","queries":[{"id":"22a65cea-b96f-44fa-a1e2-008885d7bd2e","name":"listTeams0","type":"action","properties":{"spec":{"connectionId":"11111111-2222-3333-4444-555555555555","fqn":"com.datadoghq.dd.teams.listTeams","inputs":{}}}}],"rootInstanceName":"grid0","selfService":false,"tags":[]},"relationships":{"deployment":{"data":{"id":"809863ea-921e-4ea4-8382-560c3cf1209b","type":"deployment"},"meta":{"created_at":"2026-10-22T11:55:03.424541Z","user_id":1445416,"user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","user_name":""}}},"meta":{"org_id":321813,"user_id":1445416,"user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","user_name":"frog@datadoghq.com","version":1,"version_id":"62204658-c619-4f23-a599-2f3e29f0bb1e","updated_since_deployment":false,"created_at":"2026-10-22T11:55:02.982641Z","updated_at":"2026-10-22T11:55:02.982641Z","deleted_at":"0001-01-01T00:00:00Z","run_as_user":"3ad549bf-eba0-11e9-a77a-0705486660d0"}},"included":[{"id":"809863ea-921e-4ea4-8382-560c3cf1209b","type":"deployment","attributes":{"app_version_id":"62204658-c619-4f23-a599-2f3e29f0bb1e","approved_at":"2026-10-22T11:55:03.424541Z","approving_user_id":1445416,"approving_user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","created_at":"2026-10-22T11:55:03.424541Z","creator_user_id":1445416,"creator_user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","description":null,"title":null},"meta":{"created_at":"2026-10-22T11:55:03.424541Z","user_id":1445416,"user_uuid":"3ad549bf-eba0-11e9-a77a-0705486660d0","user_name":""}}]}'
+        headers:
+            Content-Type:
+                - application/vnd.api+json
+        status: 200 OK
+        code: 200
+        duration: 236.431577ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/app-builder/apps/39f78efa-ef92-58b9-b6e6-e692655cf4db
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding: []
+        trailer: {}
+        content_length: 78
+        uncompressed: false
+        body: '{"data":{"id":"39f78efa-ef92-58b9-b6e6-e692655cf4db","type":"appDefinitions"}}'
+        headers:
+            Content-Type:
+                - application/vnd.api+json
+        status: 200 OK
+        code: 200
+        duration: 448.358725ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: api.datadoghq.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+        url: https://api.datadoghq.com/api/v2/app-builder/apps/39f78efa-ef92-58b9-b6e6-e692655cf4db
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding: []
+        trailer: {}
+        content_length: 167
+        uncompressed: false
+        body: '{"errors":[{"status":"404","id":"f42d3381-1343-4cb5-9817-d02ed2081f1a","title":"app not found","detail":"app with id 39f78efa-ef92-58b9-b6e6-e692655cf4db not found"}]}'
+        headers:
+            Content-Type:
+                - application/vnd.api+json
+        status: 404 Not Found
+        code: 404
+        duration: 138.075157ms

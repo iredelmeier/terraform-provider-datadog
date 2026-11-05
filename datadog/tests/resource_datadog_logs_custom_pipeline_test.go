@@ -9,10 +9,9 @@ import (
 	"github.com/terraform-providers/terraform-provider-datadog/datadog"
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 
-	datadogV1 "github.com/DataDog/datadog-api-client-go/api/v1/datadog"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func pipelineConfigForCreation(uniq string) string {
@@ -20,6 +19,8 @@ func pipelineConfigForCreation(uniq string) string {
 resource "datadog_logs_custom_pipeline" "my_pipeline_test" {
 	name = "%s"
 	is_enabled = true
+	tags = ["key1:value1", "key2:value2"]
+	description = "Pipeline description"
 	filter {
 		query = "source:redis"
 	}
@@ -73,6 +74,8 @@ resource "datadog_logs_custom_pipeline" "my_pipeline_test" {
 		pipeline {
 			name = "my nested pipeline"
 			is_enabled = true
+			tags = ["nested:tag1", "nested:tag2"]
+			description = "Nested pipeline description"
 			filter {
 				query = "source:kafka"
 			}
@@ -121,13 +124,206 @@ resource "datadog_logs_custom_pipeline" "my_pipeline_test" {
 			default_lookup = "default"
 		}
 	}
+	processor {
+		reference_table_lookup_processor {
+			name           = "reftablelookup"
+			is_enabled     = true
+			source         = "sourcefield"
+			target         = "targetfield"
+			lookup_enrichment_table   = "test_reference_table_do_not_delete"
+		}
+	}
+ 
+    processor {
+      span_id_remapper {
+			name   = "span_id_remapper"
+			is_enabled = true
+			sources = [ "dd.span_id" ]
+		}
+    }
+    processor {
+        array_processor {
+            name = "array append operation"
+            is_enabled = true
+            operation {
+                append {
+                    source = "network.client.ip"
+                    target = "sourceIps"
+                    preserve_source = true
+                }
+            }
+        }
+    }
+    processor {
+        array_processor {
+            name = "array length operation"
+            is_enabled = true
+            operation {
+                length {
+                    source = "tags"
+                    target = "tagCount"
+                }
+            }
+        }
+    }
+    processor {
+        array_processor {
+            name = "array select operation"
+            is_enabled = true
+            operation {
+                select {
+                    source = "httpRequest.headers"
+                    target = "referrer"
+                    filter = "name:Referrer"
+                    value_to_extract = "value"
+                }
+            }
+        }
+    }
+    processor {
+        decoder_processor {
+            name = "decoder operation"
+            is_enabled = true
+            source = "encoded_message"
+            target = "decoded_messsage"
+            binary_to_text_encoding = "base64"
+            input_representation = "utf_8"
+        }
+    }
+    processor {
+        exclude_attribute_processor {
+            name = "exclude attribute operation"
+            is_enabled = true
+            attribute_to_exclude = "unwanted.field"
+        }
+    }
+    processor {
+        schema_processor {
+            name = "Map to OCSF Schema"
+            is_enabled = true
+
+            schema {
+                schema_type = "ocsf"
+                version = "1.5.0"
+                class_name = "Account Change"
+                class_uid = 3001
+                profiles = ["cloud"]
+            }
+
+            mappers {
+                schema_remapper {
+                    name = "Map ocsf.user to ocsf.user"
+                    sources = ["ocsf.user"]
+                    target = "ocsf.user"
+                }
+
+                schema_remapper {
+                    name = "Map ocsf.time to ocsf.time"
+                    sources = ["ocsf.time"]
+                    target = "ocsf.time"
+                }
+
+                schema_remapper {
+                    name = "Map ocsf.cloud to ocsf.cloud"
+                    sources = ["ocsf.cloud"]
+                    target = "ocsf.cloud"
+                }
+
+                schema_category_mapper {
+                    name = "Map to OCSF severity"
+
+                    targets {
+                        name = "ocsf.severity"
+                        id = "ocsf.severity_id"
+                    }
+
+                    categories {
+                        name = "Informational"
+                        id = 1
+                        filter {
+                            query = "@eventName:*"
+                        }
+                    }
+                }
+
+                schema_category_mapper {
+                    name = "Map to OCSF categories"
+
+                    targets {
+                        name = "ocsf.activity_name"
+                        id = "ocsf.activity_id"
+                    }
+
+                    categories {
+                        name = "Create"
+                        id = 1
+                        filter {
+                            query = "eventName:CreateUser"
+                        }
+                    }
+
+                    fallback {
+                        values = {
+                            "ocsf.activity_name" = "Other"
+                            "ocsf.activity_id" = "99"
+                        }
+                        sources = {
+                            "ocsf.activity_name" = "[\"eventName\"]"
+                        }
+                    }
+                }
+            }
+        }
+    }
+    processor {
+        array_map_processor {
+            name = "Map S3 bucket details to OCSF resources"
+            is_enabled = true
+            source = "detail.resource.s3BucketDetails"
+            target = "ocsf.resources"
+            processors {
+                attribute_remapper {
+                    sources = ["$sourceElem.Arn"]
+                    target = "$targetElem.uid"
+                }
+            }
+            processors {
+                attribute_remapper {
+                    sources = ["detail.awsRegion"]
+                    target = "$targetElem.region"
+                }
+            }
+        }
+    }
+
 }`, uniq)
 }
+
+func pipelineConfigWithoutTagsAndDescriptionForCreation(uniq string) string {
+	return fmt.Sprintf(`
+resource "datadog_logs_custom_pipeline" "my_pipeline_test" {
+	name = "%s"
+	is_enabled = true
+	filter {
+		query = "source:redis"
+	}
+	processor {
+		date_remapper {
+			name = "Define date"
+			is_enabled = true
+			sources = ["verbose"]
+		}
+	}
+}`, uniq)
+}
+
 func pipelineConfigForUpdate(uniq string) string {
 	return fmt.Sprintf(`
 resource "datadog_logs_custom_pipeline" "my_pipeline_test" {
 	name = "%s"
 	is_enabled = false
+	tags = ["key1:value1", "key2:value2"]
+	description = "Pipeline description"
 	filter {
 		query = "source:kafka"
 	}
@@ -215,6 +411,188 @@ resource "datadog_logs_custom_pipeline" "my_pipeline_test" {
 			default_lookup = "default"
 		}
 	}
+	processor {
+		reference_table_lookup_processor {
+			name           = "reftablelookup"
+			is_enabled     = true
+			source         = "sourcefield"
+			target         = "targetfield"
+			lookup_enrichment_table   = "test_reference_table_do_not_delete"
+		}
+	}
+ 
+    processor {
+      span_id_remapper {
+			name   = "span_id_remapper"
+			is_enabled = true
+			sources = [ "dd.span_id" ]
+		}
+    }
+    processor {
+        array_processor {
+            name = "array append operation updated"
+            is_enabled = false
+            operation {
+                append {
+                    source = "network.server.ip"
+                    target = "destinationIps"
+                    preserve_source = true
+                }
+            }
+        }
+    }
+    processor {
+        array_processor {
+            name = "array length operation updated"
+            is_enabled = true
+            operation {
+                length {
+                    source = "headers"
+                    target = "headerCount"
+                }
+            }
+        }
+    }
+    processor {
+        array_processor {
+            name = "array select operation updated"
+            is_enabled = true
+            operation {
+                select {
+                    source = "httpResponse.headers"
+                    target = "contentType"
+                    filter = "name:Content-Type"
+                    value_to_extract = "value"
+                }
+            }
+        }
+    }
+    processor {
+        decoder_processor {
+            name = "decoder operation updated"
+            is_enabled = false
+            source = "hex_encoded_data"
+            target = "decoded_messsage"
+            binary_to_text_encoding = "base16"
+            input_representation = "integer"
+        }
+    }
+processor {
+        schema_processor {
+            name = "Map to OCSF Schema updated"
+            is_enabled = true
+
+            schema {
+                schema_type = "ocsf"
+                version = "1.5.0"
+                class_name = "Authentication"
+                class_uid = 3002
+            }
+
+            mappers {
+                schema_remapper {
+                    name = "Map ocsf.user to ocsf.user"
+                    sources = ["ocsf.user"]
+                    target = "ocsf.user"
+                }
+
+                schema_remapper {
+                    name = "Map http_request to ocsf.http.request"
+                    sources = ["http_request"]
+                    target = "ocsf.http_request"
+                }
+
+                schema_remapper {
+                    name = "Map ocsf.time to ocsf.time"
+                    sources = ["ocsf.time"]
+                    target = "ocsf.time"
+                }
+
+                schema_category_mapper {
+                    name = "Map to OCSF severity"
+
+                    targets {
+                        name = "ocsf.severity"
+                        id = "ocsf.severity_id"
+                    }
+
+                    categories {
+                        name = "Informational"
+                        id = 1
+                        filter {
+                            query = "@eventName:*"
+                        }
+                    }
+                }
+
+                schema_category_mapper {
+                    name = "Map to OCSF categories"
+
+                    targets {
+                        name = "ocsf.activity_name"
+                        id = "ocsf.activity_id"
+                    }
+
+                    categories {
+                        name = "Create"
+                        id = 1
+                        filter {
+                            query = "eventName:CreateUser"
+                        }
+                    }
+
+                    fallback {
+                        values = {
+                            "ocsf.activity_name" = "Other"
+                            "ocsf.activity_id" = "99"
+                        }
+                        sources = {
+                            "ocsf.activity_name" = "[\"eventName\"]"
+                        }
+                    }
+                }
+            }
+        }
+    }
+    processor {
+        array_map_processor {
+            name = "Map S3 bucket details to OCSF resources (updated)"
+            is_enabled = true
+            source = "detail.resource.s3BucketDetails"
+            target = "ocsf.resources"
+            processors {
+                attribute_remapper {
+                    sources = ["$sourceElem.Arn"]
+                    target = "$targetElem.uid"
+                }
+            }
+            processors {
+                attribute_remapper {
+                    sources = ["detail.awsRegion"]
+                    target = "$targetElem.region"
+                }
+            }
+        }
+    }
+
+}`, uniq)
+}
+
+func pipelineConfigWithoutTagsAndDescriptionForUpdate(uniq string) string {
+	return fmt.Sprintf(`
+resource "datadog_logs_custom_pipeline" "my_pipeline_test" {
+	name = "%s"
+	is_enabled = false
+	filter {
+		query = "source:kafka"
+	}
+	processor {
+		date_remapper {
+			name = "test date remapper"
+			is_enabled = true
+			sources = ["verbose"]
+		}
+	}
 }`, uniq)
 }
 func pipelineConfigWithEmptyFilterQuery(uniq string) string {
@@ -231,14 +609,42 @@ resource "datadog_logs_custom_pipeline" "empty_filter_query_pipeline" {
 			sources = ["redis.severity"]
 		}
 	}
+
+	processor {
+		category_processor {
+		  target = "foo.severity"
+		  category {
+			name = "debug"
+			filter {
+			  query = ""
+			}
+		  }
+		  name       = "sample category processor"
+		  is_enabled = true
+		}
+	  }
+
+	processor {
+		pipeline {
+			is_enabled = true
+			name       = "Nginx"
+			tags = ["nested:empty-filter"]
+			description = "Nested pipeline with empty filter"
+			filter {
+				query = ""
+			}
+
+		}
+	}
 }`, uniq)
 }
 
 func TestAccDatadogLogsPipeline_basic(t *testing.T) {
-	t.Parallel()
 	ctx, accProviders := testAccProviders(context.Background(), t)
-	pipelineName := uniqueEntityName(ctx, t)
-	pipelineName2 := pipelineName + "-updated"
+	pipelineCreatedName := uniqueEntityName(ctx, t)
+	pipelineUpdatedName := pipelineCreatedName + "-updated"
+	pipelineWithoutTagsAndDescriptionCreatedName := pipelineCreatedName + "-without-tags-and-description"
+	pipelineWithoutTagsAndDescriptionUpdatedName := pipelineUpdatedName + "-without-tags-and-description"
 	accProvider := testAccProvider(t, accProviders)
 
 	resource.Test(t, resource.TestCase{
@@ -247,13 +653,21 @@ func TestAccDatadogLogsPipeline_basic(t *testing.T) {
 		CheckDestroy:      testAccCheckPipelineDestroy(accProvider),
 		Steps: []resource.TestStep{
 			{
-				Config: pipelineConfigForCreation(pipelineName),
+				Config: pipelineConfigForCreation(pipelineCreatedName),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPipelineExists(accProvider),
 					resource.TestCheckResourceAttr(
-						"datadog_logs_custom_pipeline.my_pipeline_test", "name", pipelineName),
+						"datadog_logs_custom_pipeline.my_pipeline_test", "name", pipelineCreatedName),
 					resource.TestCheckResourceAttr(
 						"datadog_logs_custom_pipeline.my_pipeline_test", "is_enabled", "true"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.#", "2"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.0", "key1:value1"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.1", "key2:value2"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "description", "Pipeline description"),
 					resource.TestCheckResourceAttr(
 						"datadog_logs_custom_pipeline.my_pipeline_test", "filter.0.query", "source:redis"),
 					resource.TestCheckResourceAttr(
@@ -269,6 +683,14 @@ func TestAccDatadogLogsPipeline_basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.4.pipeline.0.filter.0.query", "source:kafka"),
 					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.4.pipeline.0.tags.#", "2"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.4.pipeline.0.tags.0", "nested:tag1"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.4.pipeline.0.tags.1", "nested:tag2"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.4.pipeline.0.description", "Nested pipeline description"),
+					resource.TestCheckResourceAttr(
 						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.4.pipeline.0.processor.0.url_parser.0.sources.#", "1"),
 					resource.TestCheckResourceAttr(
 						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.4.pipeline.0.processor.1.user_agent_parser.0.target", "http_agent.details"),
@@ -278,15 +700,27 @@ func TestAccDatadogLogsPipeline_basic(t *testing.T) {
 						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.6.lookup_processor.0.lookup_table.#", "1"),
 					resource.TestCheckResourceAttr(
 						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.7.lookup_processor.0.lookup_table.#", "1"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.8.reference_table_lookup_processor.0.lookup_enrichment_table", "test_reference_table_do_not_delete"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.9.span_id_remapper.0.sources.#", "1"),
 				),
 			}, {
-				Config: pipelineConfigForUpdate(pipelineName2),
+				Config: pipelineConfigForUpdate(pipelineUpdatedName),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPipelineExists(accProvider),
 					resource.TestCheckResourceAttr(
-						"datadog_logs_custom_pipeline.my_pipeline_test", "name", pipelineName2),
+						"datadog_logs_custom_pipeline.my_pipeline_test", "name", pipelineUpdatedName),
 					resource.TestCheckResourceAttr(
 						"datadog_logs_custom_pipeline.my_pipeline_test", "is_enabled", "false"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.#", "2"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.0", "key1:value1"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.1", "key2:value2"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "description", "Pipeline description"),
 					resource.TestCheckResourceAttr(
 						"datadog_logs_custom_pipeline.my_pipeline_test", "filter.0.query", "source:kafka"),
 					resource.TestCheckResourceAttr(
@@ -305,13 +739,63 @@ func TestAccDatadogLogsPipeline_basic(t *testing.T) {
 						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.7.lookup_processor.0.lookup_table.#", "2"),
 					resource.TestCheckResourceAttr(
 						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.8.lookup_processor.0.lookup_table.#", "2"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.9.reference_table_lookup_processor.0.lookup_enrichment_table", "test_reference_table_do_not_delete"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "processor.10.span_id_remapper.0.sources.#", "1"),
+				),
+			}, { // for backward compatibility as tags and description were not always present and clients have Terraform files without them
+				Config: pipelineConfigWithoutTagsAndDescriptionForCreation(pipelineWithoutTagsAndDescriptionCreatedName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPipelineExists(accProvider),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "name", pipelineWithoutTagsAndDescriptionCreatedName),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "is_enabled", "true"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "filter.0.query", "source:redis"),
+				),
+			}, {
+				Config: pipelineConfigWithoutTagsAndDescriptionForUpdate(pipelineWithoutTagsAndDescriptionUpdatedName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPipelineExists(accProvider),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "name", pipelineWithoutTagsAndDescriptionUpdatedName),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "is_enabled", "false"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "filter.0.query", "source:kafka"),
 				),
 			},
 		},
 	})
 }
 
+func TestAccDatadogLogsPipeline_import(t *testing.T) {
+	t.Parallel()
+	ctx, accProviders := testAccProviders(context.Background(), t)
+	pipelineName := uniqueEntityName(ctx, t)
+	accProvider := testAccProvider(t, accProviders)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: accProviders,
+		CheckDestroy:      testAccCheckPipelineDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: pipelineConfigForCreation(pipelineName),
+			},
+			{
+				ResourceName:      "datadog_logs_custom_pipeline.my_pipeline_test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 func TestAccDatadogLogsPipelineEmptyFilterQuery(t *testing.T) {
+	t.Parallel()
 	ctx, accProviders := testAccProviders(context.Background(), t)
 	pipelineName := uniqueEntityName(ctx, t)
 	accProvider := testAccProvider(t, accProviders)
@@ -331,6 +815,68 @@ func TestAccDatadogLogsPipelineEmptyFilterQuery(t *testing.T) {
 						"datadog_logs_custom_pipeline.empty_filter_query_pipeline", "is_enabled", "true"),
 					resource.TestCheckResourceAttr(
 						"datadog_logs_custom_pipeline.empty_filter_query_pipeline", "filter.0.query", ""),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.empty_filter_query_pipeline", "processor.1.category_processor.0.category.0.filter.0.query", ""),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.empty_filter_query_pipeline", "processor.2.pipeline.0.filter.0.query", ""),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.empty_filter_query_pipeline", "processor.2.pipeline.0.tags.#", "1"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.empty_filter_query_pipeline", "processor.2.pipeline.0.tags.0", "nested:empty-filter"),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.empty_filter_query_pipeline", "processor.2.pipeline.0.description", "Nested pipeline with empty filter"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccDatadogLogsPipelineDefaultTags(t *testing.T) {
+	t.Parallel()
+	ctx, accProviders := testAccProviders(context.Background(), t)
+	pipelineName := uniqueEntityName(ctx, t)
+	accProvider := testAccProvider(t, accProviders)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() { testAccPreCheck(t) },
+		Steps: []resource.TestStep{
+			{ // Default tags are correctly added
+				Config: pipelineConfigForCreation(pipelineName),
+				ProviderFactories: map[string]func() (*schema.Provider, error){
+					"datadog": withDefaultTags(accProvider, map[string]interface{}{
+						"default_key": "default_value",
+					}),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "name", pipelineName),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.#", "3"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.*", "key1:value1"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.*", "key2:value2"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.*", "default_key:default_value"),
+				),
+			},
+			{ // Resource tags take precedence over default tags and duplicates stay
+				Config: pipelineConfigForCreation(pipelineName),
+				ProviderFactories: map[string]func() (*schema.Provider, error){
+					"datadog": withDefaultTags(accProvider, map[string]interface{}{
+						"key1": "new_value1",
+						"key2": "new_value2",
+					}),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "name", pipelineName),
+					resource.TestCheckResourceAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.#", "2"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.*", "key1:value1"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_logs_custom_pipeline.my_pipeline_test", "tags.*", "key2:value2"),
 				),
 			},
 		},
@@ -341,21 +887,21 @@ func testAccCheckPipelineExists(accProvider func() (*schema.Provider, error)) re
 	return func(s *terraform.State) error {
 		provider, _ := accProvider()
 		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		datadogClientV1 := providerConf.DatadogClientV1
-		authV1 := providerConf.AuthV1
+		apiInstances := providerConf.DatadogApiInstances
+		auth := providerConf.Auth
 
-		if err := pipelineExistsChecker(authV1, s, datadogClientV1); err != nil {
+		if err := pipelineExistsChecker(auth, s, apiInstances); err != nil {
 			return err
 		}
 		return nil
 	}
 }
 
-func pipelineExistsChecker(ctx context.Context, s *terraform.State, datadogClientV1 *datadogV1.APIClient) error {
+func pipelineExistsChecker(ctx context.Context, s *terraform.State, apiInstances *utils.ApiInstances) error {
 	for _, r := range s.RootModule().Resources {
 		if r.Type == "datadog_logs_custom_pipeline" {
 			id := r.Primary.ID
-			if _, _, err := datadogClientV1.LogsPipelinesApi.GetLogsPipeline(ctx, id); err != nil {
+			if _, _, err := apiInstances.GetLogsPipelinesApiV1().GetLogsPipeline(ctx, id); err != nil {
 				return fmt.Errorf("received an error when retrieving pipeline, (%s)", err)
 			}
 		}
@@ -367,22 +913,23 @@ func testAccCheckPipelineDestroy(accProvider func() (*schema.Provider, error)) f
 	return func(s *terraform.State) error {
 		provider, _ := accProvider()
 		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		datadogClientV1 := providerConf.DatadogClientV1
-		authV1 := providerConf.AuthV1
+		apiInstances := providerConf.DatadogApiInstances
+		auth := providerConf.Auth
 
-		if err := pipelineDestroyHelper(authV1, s, datadogClientV1); err != nil {
+		if err := pipelineDestroyHelper(auth, s, apiInstances); err != nil {
 			return err
 		}
 		return nil
 	}
 }
 
-func pipelineDestroyHelper(ctx context.Context, s *terraform.State, datadogClientV1 *datadogV1.APIClient) error {
+func pipelineDestroyHelper(ctx context.Context, s *terraform.State, apiInstances *utils.ApiInstances) error {
 	for _, r := range s.RootModule().Resources {
 		if r.Type == "datadog_logs_custom_pipeline" {
 			err := utils.Retry(2, 5, func() error {
 				id := r.Primary.ID
-				_, _, err := datadogClientV1.LogsPipelinesApi.GetLogsPipeline(ctx, id)
+				_, _, err := apiInstances.GetLogsPipelinesApiV1().
+					GetLogsPipeline(ctx, id)
 				if err != nil {
 					if strings.Contains(err.Error(), "400 Bad Request") {
 						return nil

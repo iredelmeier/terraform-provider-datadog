@@ -3,16 +3,16 @@ package test
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
-	"github.com/terraform-providers/terraform-provider-datadog/datadog"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/fwprovider"
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 
-	datadogV1 "github.com/DataDog/datadog-api-client-go/api/v1/datadog"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	dd "github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func testAccCheckDatadogIntegrationAzureConfig(uniq string) string {
@@ -20,7 +20,7 @@ func testAccCheckDatadogIntegrationAzureConfig(uniq string) string {
 resource "datadog_integration_azure" "an_azure_integration" {
   tenant_name   = "%[1]s"
   client_id     = "testc7f6-1234-5678-9101-3fcbf464test"
-  client_secret = "testingx./Sw*g/Y33t..R1cH+hScMDt"
+  client_secret = "TestingRh2nx664kUy5dIApvM54T4AtO"
   host_filters  = "foo:bar,buzz:lightyear"
 }
 
@@ -28,7 +28,7 @@ resource "datadog_integration_azure" "an_azure_integration_two" {
   depends_on    = [datadog_integration_azure.an_azure_integration]
   tenant_name   = "%[1]s"
   client_id     = "testc7f6-1234-5678-9101-3fcbf123test"
-  client_secret = "testingx./Sw*g/Y33t..R1cH+hScMDt"
+  client_secret = "TestingRh2nx664kUy5dIApvM54T4AtO"
   host_filters  = "foo:bar,buzz:lightyear"
 }`, uniq)
 }
@@ -38,25 +38,53 @@ func testAccCheckDatadogIntegrationAzureConfigUpdated(uniq string) string {
 resource "datadog_integration_azure" "an_azure_integration" {
   tenant_name   = "%s"
   client_id     = "testc7f6-1234-5678-9101-3fcbf464test"
-  client_secret = "testingx./Sw*g/Y33t..R1cH+hScMDt"
+  client_secret = "TestingRh2nx664kUy5dIApvM54T4AtO"
+  app_service_plan_filters = "bar:baz,stinky:pete"
+  container_app_filters = "bazinga:bazingo,woody:pride"
   automute      = true
+  cspm_enabled  = true
+  custom_metrics_enabled = true
 }`, uniq)
 }
 
-func TestAccDatadogIntegrationAzure(t *testing.T) {
-	ctx, accProviders := testAccProviders(context.Background(), t)
-	tenantName := uniqueEntityName(ctx, t)
-	accProvider := testAccProvider(t, accProviders)
+func TestAccDatadogIntegrationAzure_import(t *testing.T) {
+	t.Parallel()
+	resourceName := "datadog_integration_azure.an_azure_integration"
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	tenantName := fmt.Sprintf("aaaaaaaa-bbbb-cccc-dddd-%dee", clockFromContext(ctx).Now().Unix())
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: accProviders,
-		CheckDestroy:      checkIntegrationAzureDestroy(accProvider),
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             checkIntegrationAzureDestroy(providers.frameworkProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogIntegrationAzureConfig(tenantName),
+			},
+			{
+				ResourceName: resourceName,
+				ImportState:  true,
+				// Disabled because API doesn't return client_secret
+				ImportStateVerify: false,
+			},
+		},
+	})
+}
+
+func TestAccDatadogIntegrationAzure(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	tenantName := fmt.Sprintf("aaaaaaaa-bbbb-cccc-dddd-%dee", clockFromContext(ctx).Now().Unix())
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             checkIntegrationAzureDestroy(providers.frameworkProvider),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckDatadogIntegrationAzureConfig(tenantName),
 				Check: resource.ComposeTestCheckFunc(
-					checkIntegrationAzureExists(accProvider),
+					checkIntegrationAzureExists(providers.frameworkProvider),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_azure.an_azure_integration",
 						"tenant_name", tenantName),
@@ -65,13 +93,25 @@ func TestAccDatadogIntegrationAzure(t *testing.T) {
 						"client_id", "testc7f6-1234-5678-9101-3fcbf464test"),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_azure.an_azure_integration",
-						"client_secret", "testingx./Sw*g/Y33t..R1cH+hScMDt"),
+						"client_secret", "TestingRh2nx664kUy5dIApvM54T4AtO"),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_azure.an_azure_integration",
 						"host_filters", "foo:bar,buzz:lightyear"),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_azure.an_azure_integration",
+						"app_service_plan_filters", ""),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
+						"container_app_filters", ""),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
 						"automute", "false"),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
+						"cspm_enabled", "false"),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
+						"custom_metrics_enabled", "false"),
 					resource.TestCheckResourceAttr("datadog_integration_azure.an_azure_integration_two",
 						"tenant_name", tenantName),
 					resource.TestCheckResourceAttr(
@@ -82,7 +122,7 @@ func TestAccDatadogIntegrationAzure(t *testing.T) {
 			{
 				Config: testAccCheckDatadogIntegrationAzureConfigUpdated(tenantName),
 				Check: resource.ComposeTestCheckFunc(
-					checkIntegrationAzureExists(accProvider),
+					checkIntegrationAzureExists(providers.frameworkProvider),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_azure.an_azure_integration",
 						"tenant_name", tenantName),
@@ -91,13 +131,25 @@ func TestAccDatadogIntegrationAzure(t *testing.T) {
 						"client_id", "testc7f6-1234-5678-9101-3fcbf464test"),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_azure.an_azure_integration",
-						"client_secret", "testingx./Sw*g/Y33t..R1cH+hScMDt"),
+						"client_secret", "TestingRh2nx664kUy5dIApvM54T4AtO"),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_azure.an_azure_integration",
 						"host_filters", ""),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_azure.an_azure_integration",
+						"app_service_plan_filters", "bar:baz,stinky:pete"),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
+						"container_app_filters", "bazinga:bazingo,woody:pride"),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
 						"automute", "true"),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
+						"cspm_enabled", "true"),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
+						"custom_metrics_enabled", "true"),
 				),
 			},
 		},
@@ -105,8 +157,28 @@ func TestAccDatadogIntegrationAzure(t *testing.T) {
 	)
 }
 
-func checkIntegrationAzureExistsHelper(ctx context.Context, s *terraform.State, client *datadogV1.APIClient) error {
-	integrations, _, err := client.AzureIntegrationApi.ListAzureIntegration(ctx)
+func TestAccDatadogIntegrationAzure_MissingClientSecret(t *testing.T) {
+	t.Parallel()
+	_, _, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "datadog_integration_azure" "missing_secret" {
+  tenant_name = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+  client_id   = "testc7f6-1234-5678-9101-3fcbf464test"
+}`,
+				ExpectError: regexp.MustCompile("client_secret is required unless secretless_auth_enabled is true"),
+			},
+		},
+	})
+}
+
+func checkIntegrationAzureExistsHelper(ctx context.Context, s *terraform.State, apiInstances *utils.ApiInstances) error {
+	integrations, _, err := apiInstances.GetAzureIntegrationApiV1().ListAzureIntegration(ctx)
 	if err != nil {
 		return err
 	}
@@ -125,24 +197,22 @@ func checkIntegrationAzureExistsHelper(ctx context.Context, s *terraform.State, 
 	return nil
 }
 
-func checkIntegrationAzureExists(accProvider func() (*schema.Provider, error)) resource.TestCheckFunc {
+func checkIntegrationAzureExists(accProvider *fwprovider.FrameworkProvider) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		datadogClientV1 := providerConf.DatadogClientV1
-		authV1 := providerConf.AuthV1
+		apiInstances := accProvider.DatadogApiInstances
+		auth := accProvider.Auth
 
-		if err := checkIntegrationAzureExistsHelper(authV1, s, datadogClientV1); err != nil {
+		if err := checkIntegrationAzureExistsHelper(auth, s, apiInstances); err != nil {
 			return err
 		}
 		return nil
 	}
 }
 
-func checkIntegrationAzureDestroyHelper(ctx context.Context, s *terraform.State, client *datadogV1.APIClient) error {
-	integrations, _, err := client.AzureIntegrationApi.ListAzureIntegration(ctx)
-	if err != nil && !strings.Contains(string(err.(datadogV1.GenericOpenAPIError).Body()), "Azure Integration not yet installed.") {
-		return fmt.Errorf("Error listing Azure Accounts: Response %s: %v", err.(datadogV1.GenericOpenAPIError).Body(), err)
+func checkIntegrationAzureDestroyHelper(ctx context.Context, s *terraform.State, apiInstances *utils.ApiInstances) error {
+	integrations, _, err := apiInstances.GetAzureIntegrationApiV1().ListAzureIntegration(ctx)
+	if err != nil && !strings.Contains(string(err.(dd.GenericOpenAPIError).Body()), "Azure Integration not yet installed.") {
+		return fmt.Errorf("Error listing Azure Accounts: Response %s: %v", err.(dd.GenericOpenAPIError).Body(), err)
 	}
 	for _, r := range s.RootModule().Resources {
 		if r.Type == "datadog_integration_azure" {
@@ -160,14 +230,12 @@ func checkIntegrationAzureDestroyHelper(ctx context.Context, s *terraform.State,
 	return nil
 }
 
-func checkIntegrationAzureDestroy(accProvider func() (*schema.Provider, error)) func(*terraform.State) error {
+func checkIntegrationAzureDestroy(accProvider *fwprovider.FrameworkProvider) func(*terraform.State) error {
 	return func(s *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		datadogClientV1 := providerConf.DatadogClientV1
-		authV1 := providerConf.AuthV1
+		apiInstances := accProvider.DatadogApiInstances
+		auth := accProvider.Auth
 
-		if err := checkIntegrationAzureDestroyHelper(authV1, s, datadogClientV1); err != nil {
+		if err := checkIntegrationAzureDestroyHelper(auth, s, apiInstances); err != nil {
 			return err
 		}
 		return nil

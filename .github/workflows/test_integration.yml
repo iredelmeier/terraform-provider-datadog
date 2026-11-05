@@ -1,0 +1,95 @@
+name: Run Integration Tests
+
+permissions:
+  contents: read
+
+# pull_request_target so that PRs from forks can mint Datadog credentials via
+# OIDC. The credentialed job checks out the PR head and, for forks, runs in the
+# forks-prs environment.
+on: # yamllint disable-line rule:truthy
+  pull_request_target:
+    types:
+      - labeled
+      - unlabeled
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  schedule:
+    - cron: "0 */12 * * *"
+
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}-test-integration
+  cancel-in-progress: true
+
+env:
+  TERRAFORM_VERSION: "1.13.1"
+
+jobs:
+  integration_tests:
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'pull_request_target' && contains(github.event.pull_request.labels.*.name, 'ci/integrations')) || github.event_name == 'schedule'
+    # Fork PRs run untrusted code with live (short-lived, test-org) credentials,
+    # so they run in the forks-prs environment. The scheduled run on master uses
+    # no environment gate.
+    environment: ${{ github.event.pull_request.head.repo.fork && 'forks-prs' || '' }}
+    permissions:
+      contents: read
+      id-token: write # Required to mint Datadog credentials via dd-sts
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # PR head for pull_request_target; the triggering ref for the schedule.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # checkout v7 refuses fork-head checkouts under pull_request_target by
+          # default. Running the PR's code is intended here; fork runs are gated
+          # on the forks-prs environment declared above.
+          allow-unsafe-pr-checkout: true
+      - name: Mint Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30 # v1.0.4
+        with:
+          policy: terraform-provider-datadog
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/cache@f4b3439a656ba812b8cb417d2d49f9c810103092
+        with:
+          path: ~/.cache/terraform
+          key: terraform-${{ env.TERRAFORM_VERSION }}
+      - name: Install terraform
+        run: |
+          mkdir -p ~/.cache/terraform
+          if [ ! -f ~/.cache/terraform/terraform-${{ env.TERRAFORM_VERSION }} ]; then
+            wget https://releases.hashicorp.com/terraform/${{ env.TERRAFORM_VERSION }}/terraform_${{ env.TERRAFORM_VERSION }}_linux_amd64.zip -O ~/.cache/terraform/terraform-${{ env.TERRAFORM_VERSION }}
+          fi
+          unzip -o -d ~/.cache/terraform ~/.cache/terraform/terraform-${{ env.TERRAFORM_VERSION }}
+      - name: Sweep stale test resources
+        run: make sweep
+        env:
+          DD_TEST_CLIENT_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_TEST_CLIENT_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
+      - name: Build skip list for flaky tests
+        id: skip-list
+        run: |
+          SKIP_REGEX=$(python3 scripts/build_skip_regex.py --escape-for-make)
+          if [ -n "$SKIP_REGEX" ]; then
+            echo "test_args=-skip '${SKIP_REGEX}'" >> "$GITHUB_OUTPUT"
+            echo "Skipping flaky tests: ${SKIP_REGEX}"
+          else
+            echo "test_args=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run integration tests
+        run: make testacc
+        env:
+          RECORD: "none"
+          CI: "true"
+          DD_TEST_CLIENT_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_TEST_CLIENT_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
+          DD_HTTP_CLIENT_RETRY_ENABLED: "true"
+          TF_ACC_TERRAFORM_PATH: "/home/runner/.cache/terraform/terraform"
+          TF_ACC_TEMP_DIR: "/tmp"
+          TESTARGS: ${{ steps.skip-list.outputs.test_args }}

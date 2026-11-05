@@ -13,6 +13,9 @@ website/.vagrant
 website/.bundle
 website/build
 website/node_modules
+.agents/
+.claude/
+.specify/
 .vagrant/
 *.backup
 ./*.tfstate
@@ -25,9 +28,27 @@ website/node_modules
 *.iml
 *.test
 *.iml
-
+.vscode/
 website/vendor
 
 # Test exclusions
 !command/test-fixtures/**/*.tfstate
 !command/test-fixtures/**/.terraform/
+
+# python
+*.pyc
+
+# Claude for individual users
+CLAUDE.local.md
+
+# envrc
+.envrc
+
+# local scratch for testing generated providers
+sandbox/
+
+# delve debug binaries
+__debug_bin*
+
+# editor-local configuration
+.zed/

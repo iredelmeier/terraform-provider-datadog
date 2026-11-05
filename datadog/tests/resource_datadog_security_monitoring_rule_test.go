@@ -3,28 +3,29 @@ package test
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
-	"github.com/terraform-providers/terraform-provider-datadog/datadog"
+	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/fwprovider"
 )
 
 const tfSecurityRuleName = "datadog_security_monitoring_rule.acceptance_test"
 
 func TestAccDatadogSecurityMonitoringRule_Basic(t *testing.T) {
 	t.Parallel()
-	ctx, accProviders := testAccProviders(context.Background(), t)
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
 	ruleName := uniqueEntityName(ctx, t)
-	accProvider := testAccProvider(t, accProviders)
+	accProvider := providers.frameworkProvider
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: accProviders,
-		CheckDestroy:      testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckDatadogSecurityMonitoringCreatedConfig(ruleName),
@@ -42,16 +43,39 @@ func TestAccDatadogSecurityMonitoringRule_Basic(t *testing.T) {
 	})
 }
 
-func TestAccDatadogSecurityMonitoringRule_NewValueRule(t *testing.T) {
+func TestAccDatadogSecurityMonitoringRule_RemoveReferenceTables(t *testing.T) {
 	t.Parallel()
-	ctx, accProviders := testAccProviders(context.Background(), t)
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
 	ruleName := uniqueEntityName(ctx, t)
-	accProvider := testAccProvider(t, accProviders)
+	accProvider := providers.frameworkProvider
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: accProviders,
-		CheckDestroy:      testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogSecurityMonitoringCreatedConfig(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitorCreatedCheck(accProvider, ruleName),
+			},
+			{
+				Config: testAccCheckDatadogSecurityMonitoringUpdatedConfigWithoutReferenceTables(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitoringUpdateCheckWithoutReferenceTables(accProvider, ruleName),
+			},
+		},
+	})
+}
+
+func TestAccDatadogSecurityMonitoringRule_NewValueRule(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckDatadogSecurityMonitoringCreatedConfigNewValueRule(ruleName),
@@ -65,16 +89,284 @@ func TestAccDatadogSecurityMonitoringRule_NewValueRule(t *testing.T) {
 	})
 }
 
-func TestAccDatadogSecurityMonitoringRule_CwsRule(t *testing.T) {
+func TestAccDatadogSecurityMonitoringRule_ImpossibleTravelRule(t *testing.T) {
 	t.Parallel()
-	ctx, accProviders := testAccProviders(context.Background(), t)
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
 	ruleName := uniqueEntityName(ctx, t)
-	accProvider := testAccProvider(t, accProviders)
+	accProvider := providers.frameworkProvider
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: accProviders,
-		CheckDestroy:      testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogSecurityMonitoringCreatedConfigImpossibleTravelRule(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitorCreatedCheckImpossibleTravelRule(accProvider, ruleName),
+			},
+			{
+				Config: testAccCheckDatadogSecurityMonitoringUpdatedConfigImpossibleTravelRule(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitorUpdatedCheckImpossibleTravelRule(accProvider, ruleName),
+			},
+			{
+				Config: testAccCheckDatadogSecurityMonitoringConfigImpossibleTravelRuleNullDuration(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitorCheckImpossibleTravelRuleNullDuration(accProvider, ruleName),
+			},
+		},
+	})
+}
+
+// TestAccDatadogSecurityMonitoringRule_ImpossibleTravelRuleMetricsField runs the same
+// geo_data (impossible travel) lifecycle as the test above, but authored with the
+// non-deprecated `metrics` list and no `metric`. The API derives and echoes `metric`
+// back from `metrics` on every response; since `metric` is Optional (not Computed) and
+// unconfigured, reconcileEmptyQueryFields must restore it to null so the echo doesn't
+// produce "inconsistent result after apply" on create/update (GitHub #3038).
+func TestAccDatadogSecurityMonitoringRule_ImpossibleTravelRuleMetricsField(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	withMetricsChecks := func(base resource.TestCheckFunc) resource.TestCheckFunc {
+		return resource.ComposeTestCheckFunc(
+			base,
+			resource.TestCheckResourceAttr(tfSecurityRuleName, "query.0.metrics.#", "1"),
+			resource.TestCheckResourceAttr(tfSecurityRuleName, "query.0.metrics.0", "@usr.handle"),
+			// metric was never configured; the API-echoed value must be reconciled back to null.
+			resource.TestCheckNoResourceAttr(tfSecurityRuleName, "query.0.metric"),
+		)
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogSecurityMonitoringCreatedConfigImpossibleTravelRuleMetricsField(ruleName),
+				Check:  withMetricsChecks(testAccCheckDatadogSecurityMonitorCreatedCheckImpossibleTravelRule(accProvider, ruleName)),
+			},
+			{
+				Config: testAccCheckDatadogSecurityMonitoringUpdatedConfigImpossibleTravelRuleMetricsField(ruleName),
+				Check:  withMetricsChecks(testAccCheckDatadogSecurityMonitorUpdatedCheckImpossibleTravelRule(accProvider, ruleName)),
+			},
+			{
+				Config: testAccCheckDatadogSecurityMonitoringConfigImpossibleTravelRuleMetricsFieldNullDuration(ruleName),
+				Check:  withMetricsChecks(testAccCheckDatadogSecurityMonitorCheckImpossibleTravelRuleNullDuration(accProvider, ruleName)),
+			},
+		},
+	})
+}
+
+func testAccCheckDatadogSecurityMonitoringCreatedConfigImpossibleTravelRuleMetricsField(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "impossible travel rule triggered"
+    enabled = false
+    validate = true
+
+    query {
+        name = "my_query"
+        query = "*"
+        aggregation = "geo_data"
+        data_source = "logs"
+        metrics = ["@usr.handle"]
+        group_by_fields = ["@usr.handle"]
+		has_optional_group_by_fields = false
+    }
+
+    case {
+        name = ""
+        status = "high"
+        notifications = ["@user"]
+    }
+
+    options {
+        detection_method = "impossible_travel"
+        keep_alive = 600
+        max_signal_duration = 900
+        impossible_travel_options {
+            baseline_user_locations          = true
+            baseline_user_locations_duration = 20
+        }
+    }
+
+    tags = ["i:tomato", "u:tomato"]
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdatedConfigImpossibleTravelRuleMetricsField(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "impossible travel rule triggered (updated)"
+    enabled = false
+
+    query {
+        name = "my_updated_query"
+        query = "*"
+        aggregation = "geo_data"
+        data_source = "logs"
+        metrics = ["@usr.handle"]
+        group_by_fields = ["@usr.handle"]
+		has_optional_group_by_fields = false
+    }
+
+    case {
+        name = "new case name (updated)"
+        status = "high"
+        notifications = ["@user"]
+    }
+
+    options {
+        detection_method = "impossible_travel"
+        keep_alive = 600
+        max_signal_duration = 900
+        impossible_travel_options {
+            baseline_user_locations          = true
+            baseline_user_locations_duration = 25
+        }
+    }
+
+    tags = ["i:tomato", "u:tomato"]
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitoringConfigImpossibleTravelRuleMetricsFieldNullDuration(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "impossible travel rule triggered (no duration)"
+    enabled = false
+
+    query {
+        name = "my_updated_query"
+        query = "*"
+        aggregation = "geo_data"
+        data_source = "logs"
+        metrics = ["@usr.handle"]
+        group_by_fields = ["@usr.handle"]
+		has_optional_group_by_fields = false
+    }
+
+    case {
+        name = "new case name (updated)"
+        status = "high"
+        notifications = ["@user"]
+    }
+
+    options {
+        detection_method = "impossible_travel"
+        keep_alive = 600
+        max_signal_duration = 900
+        impossible_travel_options {
+            baseline_user_locations = true
+        }
+    }
+
+    tags = ["i:tomato", "u:tomato"]
+}
+`, name)
+}
+
+func TestAccDatadogSecurityMonitoringRule_AnomalyDetectionRule(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogSecurityMonitoringCreatedConfigAnomalyDetectionRule(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitorCreatedCheckAnomalyDetectionRule(accProvider, ruleName),
+			},
+			{
+				Config: testAccCheckDatadogSecurityMonitoringUpdatedConfigAnomalyDetectionRule(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitorUpdatedCheckAnomalyDetectionRule(accProvider, ruleName),
+			},
+		},
+	})
+}
+
+func TestAccDatadogSecurityMonitoringRule_AnomalyDetectionRuleInstantaneousBaseline(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogSecurityMonitoringCreatedConfigAnomalyDetectionRuleInstantaneousBaseline(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitorCreatedCheckAnomalyDetectionRuleInstantaneousBaseline(accProvider, ruleName),
+			},
+		},
+	})
+}
+
+func TestAccDatadogSecurityMonitoringRule_SequenceDetection(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogSecurityMonitoringCreatedConfigSequenceDetection(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitorCreatedCheckSequenceDetection(accProvider, ruleName),
+			},
+			{
+				Config: testAccCheckDatadogSecurityMonitoringUpdatedConfigSequenceDetection(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitoringUpdateCheckSequenceDetection(accProvider, ruleName),
+			},
+		},
+	})
+}
+
+func TestAccDatadogSecurityMonitoringRule_CreateInvalidRule(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config:      testAccCheckDatadogSecurityMonitoringCreatedConfigInvalidRule(ruleName),
+				ExpectError: regexp.MustCompile(`(?s)Max signal\s+duration must be greater than or equal to keep\s+alive.*maxSignalDuration`),
+			},
+		},
+	})
+}
+
+func TestAccDatadogSecurityMonitoringRule_CwsRule(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckDatadogSecurityMonitoringCreatedConfigCwsRule(ruleName),
@@ -88,16 +380,93 @@ func TestAccDatadogSecurityMonitoringRule_CwsRule(t *testing.T) {
 	})
 }
 
-func TestAccDatadogSecurityMonitoringRule_OnlyRequiredFields(t *testing.T) {
+func TestAccDatadogSecurityMonitoringRule_AppsecRule(t *testing.T) {
 	t.Parallel()
-	ctx, accProviders := testAccProviders(context.Background(), t)
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
 	ruleName := uniqueEntityName(ctx, t)
-	accProvider := testAccProvider(t, accProviders)
+	accProvider := providers.frameworkProvider
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: accProviders,
-		CheckDestroy:      testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogSecurityMonitoringCreatedConfigAppsecRule(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitoringCreatedCheckAppsecRule(accProvider, ruleName),
+			},
+			{
+				Config: testAccCheckDatadogSecurityMonitoringUpdatedConfigAppsecRule(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitoringUpdateCheckAppsecRule(accProvider, ruleName),
+			},
+		},
+	})
+}
+
+func TestAccDatadogSecurityMonitoringRule_AppSecSpansDeprecated(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogSecurityMonitoringConfigAppSecSpansDeprecated(ruleName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+					resource.TestCheckResourceAttr(tfSecurityRuleName, "query.0.data_source", "app_sec_spans"),
+				),
+			},
+		},
+	})
+}
+
+func testAccCheckDatadogSecurityMonitoringConfigAppSecSpansDeprecated(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+	name = "%s"
+	message = "acceptance rule triggered"
+	enabled = false
+
+	query {
+		name = "first"
+		query = "@appsec.security_activity:*"
+		aggregation = "count"
+		data_source = "app_sec_spans"
+		group_by_fields = ["service"]
+	}
+
+	case {
+		status = "high"
+		condition = "first > 0"
+	}
+
+	options {
+		detection_method = "threshold"
+		evaluation_window = 300
+		keep_alive = 600
+		max_signal_duration = 900
+	}
+
+	type = "application_security"
+}
+`, name)
+}
+
+func TestAccDatadogSecurityMonitoringRule_OnlyRequiredFields(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckDatadogSecurityMonitoringCreatedRequiredConfig(ruleName),
@@ -113,14 +482,14 @@ func TestAccDatadogSecurityMonitoringRule_OnlyRequiredFields(t *testing.T) {
 
 func TestAccDatadogSecurityMonitoringRule_Import(t *testing.T) {
 	t.Parallel()
-	ctx, accProviders := testAccProviders(context.Background(), t)
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
 	ruleName := uniqueEntityName(ctx, t)
-	accProvider := testAccProvider(t, accProviders)
+	accProvider := providers.frameworkProvider
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: accProviders,
-		CheckDestroy:      testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckDatadogSecurityMonitoringCreatedRequiredConfig(ruleName),
@@ -129,34 +498,379 @@ func TestAccDatadogSecurityMonitoringRule_Import(t *testing.T) {
 				ResourceName:      tfSecurityRuleName,
 				ImportState:       true,
 				ImportStateVerify: true,
-				Check:             testAccCheckDatadogSecurityMonitorCreatedRequiredCheck(accProvider, ruleName),
+				// "validate" is a write-only dry-run flag; the API never returns it,
+				// so ImportState cannot reproduce it.
+				ImportStateVerifyIgnore: []string{"validate"},
+				Check:                   testAccCheckDatadogSecurityMonitorCreatedRequiredCheck(accProvider, ruleName),
+			},
+		},
+	})
+}
+
+func TestAccDatadogSecurityMonitoringRule_SignalCorrelation(t *testing.T) {
+	if !isReplaying() {
+		t.Skip("API no longer allows creating signal_correlation rules (403); replay-only to keep read/update coverage of existing rules")
+	}
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogSecurityMonitoringCreatedSignalCorrelationConfig(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitorCreatedSignalCorrelationCheck(accProvider, ruleName),
+			},
+			{
+				Config: testAccCheckDatadogSecurityMonitoringUpdatedSignalCorrelationConfig(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitoringUpdateSignalCorrelationCheck(accProvider, ruleName),
+			},
+		},
+	})
+}
+
+func TestAccDatadogSecurityMonitoringRule_SecuritySignalsDataSource(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogSecurityMonitoringSecuritySignalsConfig(ruleName, ruleName, "host", "first > 0 && second > 0"),
+				Check:  testAccCheckDatadogSecurityMonitoringSecuritySignalsCheck(accProvider, ruleName, "host", "first > 0 && second > 0"),
+			},
+			{
+				Config: testAccCheckDatadogSecurityMonitoringSecuritySignalsConfig(ruleName, ruleName+" - updated", "service", "first > 1 && second > 0"),
+				Check:  testAccCheckDatadogSecurityMonitoringSecuritySignalsCheck(accProvider, ruleName+" - updated", "service", "first > 1 && second > 0"),
+			},
+		},
+	})
+}
+
+func testAccCheckDatadogSecurityMonitoringSecuritySignalsConfig(baseName string, name string, groupBy string, condition string) string {
+	return fmt.Sprintf(`
+%s
+%s
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+	name = "%s"
+	message = "acceptance rule triggered"
+	enabled = false
+	// Queries reference rule IDs that are unknown at plan time.
+	validate = false
+
+	query {
+		name = "first"
+		data_source = "security_signals"
+		query = "@workflow.rule.id:${datadog_security_monitoring_rule.acceptance_test_0.id}"
+		aggregation = "count"
+		group_by_fields = ["%s"]
+	}
+
+	query {
+		name = "second"
+		data_source = "security_signals"
+		query = "@workflow.rule.id:${datadog_security_monitoring_rule.acceptance_test_1.id}"
+		aggregation = "count"
+		group_by_fields = ["%s"]
+	}
+
+	case {
+		name = "high case"
+		status = "high"
+		condition = "%s"
+	}
+
+	options {
+		evaluation_window = 300
+		keep_alive = 600
+		max_signal_duration = 900
+	}
+
+	type = "log_detection"
+
+	tags = ["alert:red"]
+}
+`, testAccCheckDatadogSecurityMonitoringCreatedConfigWithId(baseName+"_rule_0", "0"),
+		testAccCheckDatadogSecurityMonitoringCreatedConfigWithId(baseName+"_rule_1", "1"),
+		name, groupBy, groupBy, condition)
+}
+
+func testAccCheckDatadogSecurityMonitoringSecuritySignalsCheck(accProvider *fwprovider.FrameworkProvider, ruleName string, groupBy string, condition string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "type", "log_detection"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "query.#", "2"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "query.0.data_source", "security_signals"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "query.0.aggregation", "count"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "query.0.group_by_fields.0", groupBy),
+		testCheckSecuritySignalsQueryRuleId(0),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "query.1.data_source", "security_signals"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "query.1.group_by_fields.0", groupBy),
+		testCheckSecuritySignalsQueryRuleId(1),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "case.0.condition", condition),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "signal_query.#", "0"),
+	)
+}
+
+func testCheckSecuritySignalsQueryRuleId(idx int) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		ref, ok := s.RootModule().Resources[fmt.Sprintf("%s_%d", tfSecurityRuleName, idx)]
+		if !ok {
+			return fmt.Errorf("referenced rule %d not found in state", idx)
+		}
+		return resource.TestCheckResourceAttr(tfSecurityRuleName, fmt.Sprintf("query.%d.query", idx), "@workflow.rule.id:"+ref.Primary.ID)(s)
+	}
+}
+
+func TestAccDatadogSecurityMonitoringRule_InvalidTypes(t *testing.T) {
+	t.Parallel()
+	ctx, _, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+
+	invalidValueRegex := regexp.MustCompile("Invalid Attribute Value")
+	invalidTypeRegex := regexp.MustCompile("Incorrect attribute value type")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		Steps: []resource.TestStep{
+			{
+				Config:      testAccCheckDatadogSecurityMonitoringRule("\"infrastructure_configuration\"", ruleName),
+				ExpectError: invalidValueRegex,
+			},
+			{
+				Config:      testAccCheckDatadogSecurityMonitoringRule("\"cloud_configuration\"", ruleName),
+				ExpectError: invalidValueRegex,
+			},
+			{
+				Config:      testAccCheckDatadogSecurityMonitoringRule("\"bogus_type\"", ruleName),
+				ExpectError: invalidValueRegex,
+			},
+			{
+				Config:      testAccCheckDatadogSecurityMonitoringRule("[\"one\", \"two\"]", ruleName),
+				ExpectError: invalidTypeRegex,
+			},
+		},
+	})
+}
+
+func TestAccDatadogSecurityMonitoringRule_ThirdParty(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckDatadogSecurityMonitoringCreatedThirdPartyConfig(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitoringCreatedThirdPartyCheck(accProvider, ruleName),
+			},
+			{
+				Config: testAccCheckDatadogSecurityMonitoringUpdatedThirdPartyConfig(ruleName),
+				Check:  testAccCheckDatadogSecurityMonitoringUpdatedThirdPartyCheck(accProvider, ruleName),
+			},
+		},
+	})
+}
+
+func TestAccDatadogSecurityMonitoringRule_DefaultTags(t *testing.T) {
+	t.Parallel()
+	ctx, providers, _ := testAccFrameworkMuxProviders(context.Background(), t)
+	sloName := uniqueEntityName(ctx, t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() { testAccPreCheck(t) },
+		Steps: []resource.TestStep{
+			{ // New tags are correctly added and duplicates are kept
+				Config: testAccCheckDatadogSecurityMonitoringDuplicateTags(sloName),
+				ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
+					"datadog": withDefaultTagsFw(ctx, providers, map[string]string{
+						"default_key": "default_value",
+					}),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.#", "4"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "baz"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "foo:bar"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "foo:double_bar"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "default_key:default_value"),
+				),
+			},
+			{ // Resource tags take precedence over default tags and duplicates stay
+				Config: testAccCheckDatadogSecurityMonitoringDuplicateTags(sloName),
+				ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
+					"datadog": withDefaultTagsFw(ctx, providers, map[string]string{
+						"foo": "not_bar",
+					}),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.#", "3"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "baz"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "foo:bar"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "foo:double_bar"),
+				),
+			},
+			{ // Resource tags take precedence over default tags, but new tags are added
+				Config: testAccCheckDatadogSecurityMonitoringDefaultTags(sloName),
+				ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
+					"datadog": withDefaultTagsFw(ctx, providers, map[string]string{
+						"foo":     "not_bar",
+						"new_tag": "new_value",
+					}),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.#", "3"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "baz"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "foo:bar"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "new_tag:new_value"),
+				),
+			},
+			{ // Tags without any value work correctly
+				Config: testAccCheckDatadogSecurityMonitoringDefaultTags(sloName),
+				ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
+					"datadog": withDefaultTagsFw(ctx, providers, map[string]string{
+						"no_value": "",
+					}),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.#", "3"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "baz"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "foo:bar"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "no_value"),
+				),
+			},
+			{ // Tags with colons in the value work correctly
+				Config: testAccCheckDatadogSecurityMonitoringDefaultTags(sloName),
+				ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
+					"datadog": withDefaultTagsFw(ctx, providers, map[string]string{
+						"repo_url": "https://github.com/repo/path",
+					}),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.#", "3"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "baz"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "foo:bar"),
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "repo_url:https://github.com/repo/path"),
+				),
+			},
+			{ // Works with rules without a tag attribute
+				Config: testAccCheckDatadogSecurityMonitoringNoTag(sloName),
+				ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
+					"datadog": withDefaultTagsFw(ctx, providers, map[string]string{
+						"default_key": "default_value",
+					}),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckTypeSetElemAttr(
+						"datadog_security_monitoring_rule.acceptance_test", "effective_tags.*", "default_key:default_value"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccDatadogSecurityMonitoringRule_ScheduledRule(t *testing.T) {
+	t.Parallel()
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDatadogSecurityMonitoringScheduledRuleConfig(ruleName),
+				Check:  testAccDatadogSecurityMonitoringScheduledRuleCheck(accProvider, ruleName),
+			},
+			{
+				Config: testAccDatadogSecurityMonitoringScheduledRuleUpdateConfig(ruleName),
+				Check:  testAccDatadogSecurityMonitoringScheduledRuleUpdateCheck(accProvider, ruleName),
 			},
 		},
 	})
 }
 
 func testAccCheckDatadogSecurityMonitoringCreatedConfig(name string) string {
+	return testAccCheckDatadogSecurityMonitoringCreatedConfigWithId(name, "")
+}
+
+func testAccCheckDatadogSecurityMonitoringCreatedConfigWithId(name string, id string) string {
+	suffix := id
+	if suffix != "" {
+		suffix = fmt.Sprintf("_%s", suffix)
+	}
 	return fmt.Sprintf(`
-resource "datadog_security_monitoring_rule" "acceptance_test" {
+resource "datadog_security_monitoring_rule" "acceptance_test%s" {
     name = "%s"
     message = "acceptance rule triggered"
     enabled = false
+    validate = true
     has_extended_title = true
 
     query {
         name = "first"
         query = "does not really match much"
         aggregation = "count"
+        data_source = "logs"
         group_by_fields = ["host"]
+		has_optional_group_by_fields = false
     }
 
     query {
         name = "second"
         query = "does not really match much either"
         aggregation = "cardinality"
+        data_source = "logs"	
         distinct_fields = ["@orgId"]
         group_by_fields = ["host"]
+		has_optional_group_by_fields = false
+    }
+
+	query {
+		name = "third"
+        query = "does not really match much either"
+        aggregation = "sum"
+        data_source = "logs"
+        group_by_fields = ["host"]
         metric = "@network.bytes_read"
+		has_optional_group_by_fields = false
     }
 
     case {
@@ -172,28 +886,41 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
         condition = "first > 0 || second > 0"
     }
 
+	case {
+		name = "low case"
+		status = "low"
+		condition = "third > 9000"
+	}
+
     options {
         evaluation_window = 300
         keep_alive = 600
         max_signal_duration = 900
-    }
-
-	filter {
-        query = "does not really suppress"
-        action = "suppress"
-    }
-
-	filter {
-        query = "does not really require neither"
-        action = "require"
+        decrease_criticality_based_on_env = true
     }
 
     tags = ["i:tomato", "u:tomato"]
+
+	reference_tables {
+		table_name = "table1"
+		column_name = "column1"
+		log_field_path = "@testattribute"
+		rule_query_name = "first"
+		check_presence = true
+	}
 }
-`, name)
+`, suffix, name)
 }
 
-func testAccCheckDatadogSecurityMonitorCreatedCheck(accProvider func() (*schema.Provider, error), ruleName string) resource.TestCheckFunc {
+func testAccCheckDatadogSecurityMonitorCreatedCheck(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return testAccCheckDatadogSecurityMonitorCreatedCheckWithId(accProvider, ruleName, "")
+}
+
+func testAccCheckDatadogSecurityMonitorCreatedCheckWithId(accProvider *fwprovider.FrameworkProvider, ruleName string, id string) resource.TestCheckFunc {
+	tfSecurityRuleNameWithId := tfSecurityRuleName
+	if id != "" {
+		tfSecurityRuleNameWithId = fmt.Sprintf("%s_%s", tfSecurityRuleNameWithId, id)
+	}
 	return resource.ComposeTestCheckFunc(
 		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
 		resource.TestCheckResourceAttr(
@@ -211,7 +938,11 @@ func testAccCheckDatadogSecurityMonitorCreatedCheck(accProvider func() (*schema.
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.aggregation", "count"),
 		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "logs"),
+		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.group_by_fields.0", "host"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.has_optional_group_by_fields", "false"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.1.name", "second"),
 		resource.TestCheckResourceAttr(
@@ -219,11 +950,27 @@ func testAccCheckDatadogSecurityMonitorCreatedCheck(accProvider func() (*schema.
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.1.aggregation", "cardinality"),
 		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.1.data_source", "logs"),
+		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.1.distinct_fields.0", "@orgId"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.1.group_by_fields.0", "host"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "query.1.metric", "@network.bytes_read"),
+			tfSecurityRuleName, "query.1.has_optional_group_by_fields", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.name", "third"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.query", "does not really match much either"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.aggregation", "sum"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.data_source", "logs"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.group_by_fields.0", "host"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.has_optional_group_by_fields", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.metric", "@network.bytes_read"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "case.0.name", "high case"),
 		resource.TestCheckResourceAttr(
@@ -239,23 +986,33 @@ func testAccCheckDatadogSecurityMonitorCreatedCheck(accProvider func() (*schema.
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "case.1.condition", "first > 0 || second > 0"),
 		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.2.name", "low case"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.2.status", "low"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.2.condition", "third > 9000"),
+		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.evaluation_window", "300"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.keep_alive", "600"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.max_signal_duration", "900"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "filter.0.action", "suppress"),
+			tfSecurityRuleName, "options.0.decrease_criticality_based_on_env", "true"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "filter.0.query", "does not really suppress"),
+			tfSecurityRuleName, "reference_tables.0.table_name", "table1"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "filter.1.action", "require"),
+			tfSecurityRuleName, "reference_tables.0.column_name", "column1"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "filter.1.query", "does not really require neither"),
+			tfSecurityRuleName, "reference_tables.0.log_field_path", "@testattribute"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.0", "i:tomato"),
+			tfSecurityRuleName, "reference_tables.0.rule_query_name", "first"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.1", "u:tomato"),
+			tfSecurityRuleName, "reference_tables.0.check_presence", "true"),
 	)
 }
 
@@ -265,13 +1022,16 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
     name = "%s"
     message = "acceptance rule triggered"
     enabled = false
+    validate = true
 
     query {
         name = "first"
         query = "does not really match much"
         aggregation = "new_value"
-		metric = "@value"
+        data_source = "logs"
+        metric = "@value"
         group_by_fields = ["host"]
+		has_optional_group_by_fields = false
     }
 
     case {
@@ -282,12 +1042,12 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
 
     options {
 		detection_method = "new_value"
-        evaluation_window = 300
         keep_alive = 600
         max_signal_duration = 900
 		new_value_options {
 			forget_after = 7
 			learning_duration = 1
+			instantaneous_baseline = false
 		}
     }
 
@@ -295,8 +1055,46 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
 }
 `, name)
 }
+func testAccCheckDatadogSecurityMonitoringCreatedConfigInvalidRule(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "validation failed"
+    enabled = true
+    validate = true
+	has_extended_title = true
 
-func testAccCheckDatadogSecurityMonitorCreatedCheckNewValueRule(accProvider func() (*schema.Provider, error), ruleName string) resource.TestCheckFunc {
+    query {
+        aggregation = "count"
+		data_source = "logs"
+		distinct_fields = []
+		group_by_fields = ["@userIdentity.assumed_role"]
+        name = ""
+        query = "source:source_here"
+		has_optional_group_by_fields = false
+    }
+
+    case {
+        status = "high"
+		name = ""
+		condition = "a > 0"
+        notifications = []
+    }
+
+    options {
+		detection_method = "threshold"
+		evaluation_window = 1800
+        keep_alive = 3600
+        max_signal_duration = 1800
+    }
+
+    tags = ["env:prod", "team:security"]
+	type = "log_detection"
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitorCreatedCheckNewValueRule(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
 	return resource.ComposeTestCheckFunc(
 		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
 		resource.TestCheckResourceAttr(
@@ -312,6 +1110,10 @@ func testAccCheckDatadogSecurityMonitorCreatedCheckNewValueRule(accProvider func
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.aggregation", "new_value"),
 		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "logs"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.has_optional_group_by_fields", "false"),
+		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.group_by_fields.0", "host"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "case.0.name", ""),
@@ -319,8 +1121,6 @@ func testAccCheckDatadogSecurityMonitorCreatedCheckNewValueRule(accProvider func
 			tfSecurityRuleName, "case.0.status", "high"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "case.0.notifications.0", "@user"),
-		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "options.0.evaluation_window", "300"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.keep_alive", "600"),
 		resource.TestCheckResourceAttr(
@@ -330,11 +1130,609 @@ func testAccCheckDatadogSecurityMonitorCreatedCheckNewValueRule(accProvider func
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.new_value_options.0.forget_after", "7"),
 		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.new_value_options.0.learning_method", "duration"),
+		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.new_value_options.0.learning_duration", "1"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.0", "i:tomato"),
+			tfSecurityRuleName, "options.0.new_value_options.0.learning_threshold", "0"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.1", "u:tomato"),
+			tfSecurityRuleName, "options.0.new_value_options.0.instantaneous_baseline", "false"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringCreatedConfigImpossibleTravelRule(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "impossible travel rule triggered"
+    enabled = false
+    validate = true
+
+    query {
+        name = "my_query"
+        query = "*"
+        aggregation = "geo_data"
+        data_source = "logs"
+        metric = "@usr.handle"
+        group_by_fields = ["@usr.handle"]
+		has_optional_group_by_fields = false
+    }
+
+    case {
+        name = ""
+        status = "high"
+        notifications = ["@user"]
+    }
+
+    options {
+        detection_method = "impossible_travel"
+        keep_alive = 600
+        max_signal_duration = 900
+        impossible_travel_options {
+            baseline_user_locations          = true
+            baseline_user_locations_duration = 20
+        }
+    }
+
+    tags = ["i:tomato", "u:tomato"]
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitorCreatedCheckImpossibleTravelRule(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "message", "impossible travel rule triggered"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "enabled", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.name", "my_query"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.query", "*"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.aggregation", "geo_data"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "logs"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.has_optional_group_by_fields", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.group_by_fields.0", "@usr.handle"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.name", ""),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.status", "high"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.notifications.0", "@user"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.keep_alive", "600"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.max_signal_duration", "900"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.detection_method", "impossible_travel"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.impossible_travel_options.0.baseline_user_locations", "true"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.impossible_travel_options.0.baseline_user_locations_duration", "20"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringCreatedConfigAnomalyDetectionRule(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "anomaly detection rule triggered"
+    enabled = false
+    validate = true
+
+    query {
+        name = "my_query"
+        query = "*"
+        aggregation = "count"
+        data_source = "logs"
+        group_by_fields = ["host"]
+        has_optional_group_by_fields = false
+    }
+
+    case {
+        name = ""
+        status = "high"
+        condition = "my_query > 0.95"
+        notifications = ["@user"]
+    }
+
+    options {
+        detection_method = "anomaly_detection"
+        keep_alive = 10800
+        max_signal_duration = 10800
+		evaluation_window = 1800
+        anomaly_detection_options {
+            bucket_duration = 300
+            learning_duration = 24
+            detection_tolerance = 5
+            learning_period_baseline = 0
+            instantaneous_baseline = false
+        }
+    }
+
+    tags = ["i:tomato", "u:tomato"]
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitorCreatedCheckAnomalyDetectionRule(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "message", "anomaly detection rule triggered"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "enabled", "false"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.detection_method", "anomaly_detection"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.anomaly_detection_options.0.bucket_duration", "300"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.anomaly_detection_options.0.learning_duration", "24"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.anomaly_detection_options.0.detection_tolerance", "5"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.anomaly_detection_options.0.learning_period_baseline", "0"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.anomaly_detection_options.0.instantaneous_baseline", "false"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringCreatedConfigAnomalyDetectionRuleInstantaneousBaseline(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "anomaly detection rule triggered"
+    enabled = false
+    validate = true
+
+    query {
+        name = "my_query"
+        query = "*"
+        aggregation = "count"
+        data_source = "logs"
+        group_by_fields = ["host"]
+        has_optional_group_by_fields = false
+    }
+
+    case {
+        name = ""
+        status = "high"
+        condition = "my_query > 0.95"
+        notifications = ["@user"]
+    }
+
+    options {
+        detection_method = "anomaly_detection"
+        keep_alive = 10800
+        max_signal_duration = 10800
+		evaluation_window = 1800
+        anomaly_detection_options {
+            bucket_duration = 300
+            learning_duration = 24
+            detection_tolerance = 5
+            instantaneous_baseline = true
+        }
+    }
+
+    tags = ["i:tomato", "u:tomato"]
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitorCreatedCheckAnomalyDetectionRuleInstantaneousBaseline(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "message", "anomaly detection rule triggered"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "enabled", "false"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.detection_method", "anomaly_detection"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.anomaly_detection_options.0.bucket_duration", "300"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.anomaly_detection_options.0.learning_duration", "24"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.anomaly_detection_options.0.detection_tolerance", "5"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.anomaly_detection_options.0.instantaneous_baseline", "true"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringCreatedConfigSequenceDetection(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "sequence detection rule triggered"
+    enabled = false
+    validate = true
+
+    query {
+        name = "a"
+        query = "service:logs-rule-reducer source:sequence-detection-a"
+        aggregation = "count"
+        data_source = "logs"
+        group_by_fields = ["host"]
+        has_optional_group_by_fields = false
+    }
+
+    query {
+        name = "b"
+        query = "service:logs-rule-reducer source:sequence-detection-b"
+        aggregation = "count"
+        data_source = "logs"
+        group_by_fields = ["host"]
+        has_optional_group_by_fields = false
+    }
+
+    case {
+        name = ""
+        status = "info"
+        condition = "step_b > 0"
+        notifications = []
+    }
+
+    options {
+        detection_method = "sequence_detection"
+        keep_alive = 300
+        max_signal_duration = 600
+        sequence_detection_options {
+            steps {
+                name = "step_a"
+                condition = "a > 0"
+                evaluation_window = 60
+            }
+            steps {
+                name = "step_b"
+                condition = "b > 0"
+                evaluation_window = 60
+            }
+            step_transitions {
+                parent = "step_a"
+                child = "step_b"
+                evaluation_window = 900
+            }
+        }
+    }
+
+    tags = ["i:tomato", "u:tomato"]
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitorCreatedCheckSequenceDetection(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "message", "sequence detection rule triggered"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "enabled", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.detection_method", "sequence_detection"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.keep_alive", "300"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.max_signal_duration", "600"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.0.name", "step_a"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.0.condition", "a > 0"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.0.evaluation_window", "60"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.1.name", "step_b"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.1.condition", "b > 0"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.1.evaluation_window", "60"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.step_transitions.0.parent", "step_a"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.step_transitions.0.child", "step_b"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.step_transitions.0.evaluation_window", "900"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdatedConfigSequenceDetection(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "sequence detection rule triggered (updated)"
+    enabled = false
+
+    query {
+        name = "a"
+        query = "service:logs-rule-reducer source:sequence-detection-a"
+        aggregation = "count"
+        data_source = "logs"
+        group_by_fields = ["host"]
+        has_optional_group_by_fields = false
+    }
+
+    query {
+        name = "b"
+        query = "service:logs-rule-reducer source:sequence-detection-b"
+        aggregation = "count"
+        data_source = "logs"
+        group_by_fields = ["host"]
+        has_optional_group_by_fields = false
+    }
+
+    case {
+        name = "info case"
+        status = "info"
+        condition = "step_b > 0"
+        notifications = []
+    }
+
+    options {
+        detection_method = "sequence_detection"
+        keep_alive = 300
+        max_signal_duration = 600
+        sequence_detection_options {
+            steps {
+                name = "step_a"
+                condition = "a > 0"
+                evaluation_window = 300
+            }
+            steps {
+                name = "step_b"
+                condition = "b > 0"
+                evaluation_window = 300
+            }
+            step_transitions {
+                parent = "step_a"
+                child = "step_b"
+                evaluation_window = 1800
+            }
+        }
+    }
+
+    tags = ["i:tomato", "u:tomato"]
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdateCheckSequenceDetection(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "message", "sequence detection rule triggered (updated)"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "enabled", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.detection_method", "sequence_detection"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.keep_alive", "300"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.max_signal_duration", "600"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.0.name", "step_a"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.0.condition", "a > 0"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.0.evaluation_window", "300"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.1.name", "step_b"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.1.condition", "b > 0"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.steps.1.evaluation_window", "300"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.step_transitions.0.parent", "step_a"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.step_transitions.0.child", "step_b"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.sequence_detection_options.0.step_transitions.0.evaluation_window", "1800"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdatedConfigImpossibleTravelRule(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "impossible travel rule triggered (updated)"
+    enabled = false
+
+    query {
+        name = "my_updated_query"
+        query = "*"
+        aggregation = "geo_data"
+        data_source = "logs"
+        metric = "@usr.handle"
+        group_by_fields = ["@usr.handle"]
+		has_optional_group_by_fields = false
+    }
+
+    case {
+        name = "new case name (updated)"
+        status = "high"
+        notifications = ["@user"]
+    }
+
+    options {
+        detection_method = "impossible_travel"
+        keep_alive = 600
+        max_signal_duration = 900
+        impossible_travel_options {
+            baseline_user_locations          = true
+            baseline_user_locations_duration = 25
+        }
+    }
+
+    tags = ["i:tomato", "u:tomato"]
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitorUpdatedCheckImpossibleTravelRule(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "message", "impossible travel rule triggered (updated)"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "enabled", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.name", "my_updated_query"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.query", "*"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.aggregation", "geo_data"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "logs"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.has_optional_group_by_fields", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.group_by_fields.0", "@usr.handle"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.name", "new case name (updated)"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.status", "high"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.notifications.0", "@user"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.keep_alive", "600"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.max_signal_duration", "900"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.detection_method", "impossible_travel"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.impossible_travel_options.0.baseline_user_locations", "true"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.impossible_travel_options.0.baseline_user_locations_duration", "25"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringConfigImpossibleTravelRuleNullDuration(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "impossible travel rule triggered (no duration)"
+    enabled = false
+
+    query {
+        name = "my_updated_query"
+        query = "*"
+        aggregation = "geo_data"
+        data_source = "logs"
+        metric = "@usr.handle"
+        group_by_fields = ["@usr.handle"]
+		has_optional_group_by_fields = false
+    }
+
+    case {
+        name = "new case name (updated)"
+        status = "high"
+        notifications = ["@user"]
+    }
+
+    options {
+        detection_method = "impossible_travel"
+        keep_alive = 600
+        max_signal_duration = 900
+        impossible_travel_options {
+            baseline_user_locations = true
+        }
+    }
+
+    tags = ["i:tomato", "u:tomato"]
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitorCheckImpossibleTravelRuleNullDuration(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.impossible_travel_options.0.baseline_user_locations", "true"),
+		// When duration is omitted on update, the API returns it as null in
+		// the response (no materialised default echoed back). The presence-
+		// aware extractor must keep state null instead of writing 0, so this
+		// assertion both verifies the null-preservation path and guards
+		// against the SEC-30852 null-vs-zero bug.
+		resource.TestCheckNoResourceAttr(tfSecurityRuleName, "options.0.impossible_travel_options.0.baseline_user_locations_duration"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdatedConfigAnomalyDetectionRule(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "anomaly detection rule triggered (updated)"
+    enabled = false
+    validate = true
+
+    query {
+        name = "my_updated_query"
+        query = "*"
+        aggregation = "count"
+        data_source = "logs"
+        group_by_fields = ["host"]
+        has_optional_group_by_fields = false
+    }
+
+    case {
+        name = ""
+        status = "high"
+        condition = "my_updated_query > 0.99"
+        notifications = ["@user"]
+    }
+
+    options {
+        detection_method = "anomaly_detection"
+        keep_alive = 10800
+        max_signal_duration = 10800
+        evaluation_window = 1800
+        anomaly_detection_options {
+            bucket_duration = 600
+            learning_duration = 48
+            detection_tolerance = 4
+            learning_period_baseline = 10
+            instantaneous_baseline = false
+        }
+    }
+
+    tags = ["i:tomato", "u:tomato"]
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitorUpdatedCheckAnomalyDetectionRule(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "message", "anomaly detection rule triggered (updated)"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "enabled", "false"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.detection_method", "anomaly_detection"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.anomaly_detection_options.0.bucket_duration", "600"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.anomaly_detection_options.0.learning_duration", "48"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.anomaly_detection_options.0.detection_tolerance", "4"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.anomaly_detection_options.0.learning_period_baseline", "10"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.anomaly_detection_options.0.instantaneous_baseline", "false"),
 	)
 }
 
@@ -344,12 +1742,15 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
 	name = "%s"
 	message = "acceptance rule triggered"
 	enabled = false
+    validate = true
 
 	query {
 		name = "first"
 		query = "@agent.rule_id:(%s_random_id OR random_id)"
 		aggregation = "count"
+		data_source = "security_runtime"
 		group_by_fields = ["host"]
+		has_optional_group_by_fields = false
 	}
 
 	case {
@@ -372,7 +1773,44 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
 `, name, strings.Replace(name, "-", "_", -1))
 }
 
-func testAccCheckDatadogSecurityMonitoringCreatedCheckCwsRule(accProvider func() (*schema.Provider, error), ruleName string) resource.TestCheckFunc {
+func testAccCheckDatadogSecurityMonitoringRule(ruleType string, name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+	name = "%s"
+	message = "acceptance rule triggered"
+	enabled = false
+    validate = true
+
+	query {
+		name = "first"
+		query = "@agent.rule_id:(%s_random_id OR random_id)"
+		aggregation = "count"
+		data_source = "logs"
+		group_by_fields = ["host"]
+		has_optional_group_by_fields = false
+	}
+
+	case {
+		name = "high case"
+		status = "high"
+		condition = "first > 3"
+	}
+
+	options {
+		detection_method = "threshold"
+		evaluation_window = 300
+		keep_alive = 600
+		max_signal_duration = 900
+	}
+
+	tags = ["i:tomato", "u:tomato"]
+
+	type = %s
+}
+`, name, strings.Replace(name, "-", "_", -1), ruleType)
+}
+
+func testAccCheckDatadogSecurityMonitoringCreatedCheckCwsRule(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
 	return resource.ComposeTestCheckFunc(
 		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
 		resource.TestCheckResourceAttr(
@@ -387,6 +1825,10 @@ func testAccCheckDatadogSecurityMonitoringCreatedCheckCwsRule(accProvider func()
 			tfSecurityRuleName, "query.0.query", fmt.Sprintf("@agent.rule_id:(%s_random_id OR random_id)", strings.Replace(ruleName, "-", "_", -1))),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.aggregation", "count"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "security_runtime"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.has_optional_group_by_fields", "false"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.group_by_fields.0", "host"),
 		resource.TestCheckResourceAttr(
@@ -403,10 +1845,10 @@ func testAccCheckDatadogSecurityMonitoringCreatedCheckCwsRule(accProvider func()
 			tfSecurityRuleName, "options.0.keep_alive", "600"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.max_signal_duration", "900"),
-		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.0", "i:tomato"),
-		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.1", "u:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "type", "workload_security"),
 	)
@@ -418,15 +1860,17 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
     name = "%s - updated"
     message = "acceptance rule triggered (updated)"
     enabled = true
+    validate = true
     has_extended_title = false
 
     query {
         name = "first_updated"
         query = "does not really match much (updated)"
         aggregation = "cardinality"
+        data_source = "logs"
         distinct_fields = ["@orgId"]
         group_by_fields = ["service"]
-        metric = "@network.bytes_read"
+		has_optional_group_by_fields = false
     }
 
     case {
@@ -448,17 +1892,20 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
         max_signal_duration = 600
     }
 
-	filter {
-        query = "does not really suppress (updated)"
-        action = "suppress"
-    }
-
     tags = ["u:tomato", "i:tomato"]
+
+	reference_tables {
+		table_name = "table1"
+		column_name = "column1"
+		log_field_path = "@testattribute"
+		rule_query_name = "first_updated"
+		check_presence = true
+	}
 }
 `, name)
 }
 
-func testAccCheckDatadogSecurityMonitoringUpdateCheck(accProvider func() (*schema.Provider, error), ruleName string) resource.TestCheckFunc {
+func testAccCheckDatadogSecurityMonitoringUpdateCheck(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
 	return resource.ComposeTestCheckFunc(
 		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
 		resource.TestCheckResourceAttr(
@@ -476,11 +1923,13 @@ func testAccCheckDatadogSecurityMonitoringUpdateCheck(accProvider func() (*schem
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.aggregation", "cardinality"),
 		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "logs"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.has_optional_group_by_fields", "false"),
+		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.distinct_fields.0", "@orgId"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.group_by_fields.0", "service"),
-		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "query.0.metric", "@network.bytes_read"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "case.0.name", "high case (updated)"),
 		resource.TestCheckResourceAttr(
@@ -502,13 +1951,115 @@ func testAccCheckDatadogSecurityMonitoringUpdateCheck(accProvider func() (*schem
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.max_signal_duration", "600"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "filter.0.action", "suppress"),
+			tfSecurityRuleName, "options.0.decrease_criticality_based_on_env", "false"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "filter.0.query", "does not really suppress (updated)"),
+			tfSecurityRuleName, "reference_tables.0.table_name", "table1"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.0", "u:tomato"),
+			tfSecurityRuleName, "reference_tables.0.column_name", "column1"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.1", "i:tomato"),
+			tfSecurityRuleName, "reference_tables.0.log_field_path", "@testattribute"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "reference_tables.0.rule_query_name", "first_updated"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "reference_tables.0.check_presence", "true"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdatedConfigWithoutReferenceTables(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s - updated"
+    message = "acceptance rule triggered (updated)"
+    enabled = true
+    validate = true
+    has_extended_title = false
+
+    query {
+        name = "first_updated"
+        query = "does not really match much (updated)"
+        aggregation = "cardinality"
+        data_source = "logs"
+        distinct_fields = ["@orgId"]
+        group_by_fields = ["service"]
+    }
+
+    case {
+        name = "high case (updated)"
+        status = "medium"
+        condition = "first_updated > 3"
+        notifications = ["@user"]
+    }
+
+    case {
+        name = "warning case (updated)"
+        status = "high"
+        condition = "first_updated > 0"
+    }
+
+    options {
+        evaluation_window = 60
+        keep_alive = 300
+        max_signal_duration = 600
+    }
+
+    tags = ["u:tomato", "i:tomato"]
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdateCheckWithoutReferenceTables(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "name", ruleName+" - updated"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "message", "acceptance rule triggered (updated)"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "enabled", "true"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "has_extended_title", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.name", "first_updated"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.query", "does not really match much (updated)"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.aggregation", "cardinality"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "logs"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.distinct_fields.0", "@orgId"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.group_by_fields.0", "service"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.name", "high case (updated)"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.status", "medium"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.condition", "first_updated > 3"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.notifications.0", "@user"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.1.name", "warning case (updated)"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.1.status", "high"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.1.condition", "first_updated > 0"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.evaluation_window", "60"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.keep_alive", "300"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.max_signal_duration", "600"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "reference_tables.#", "0"),
 	)
 }
 
@@ -518,13 +2069,16 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
     name = "%s - updated"
     message = "acceptance rule triggered (updated)"
     enabled = true
+	validate = true
 
     query {
-        name = "first_updated"
+        name = "first"
         query = "does not really match much (updated)"
         aggregation = "new_value"
+        data_source = "logs"
         group_by_fields = ["service"]
         metric = "@network.bytes_read"
+		has_optional_group_by_fields = false
     }
 
     case {
@@ -536,12 +2090,12 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
 
      options {
 		detection_method = "new_value"
-        evaluation_window = 300
         keep_alive = 600
         max_signal_duration = 900
 		new_value_options {
 			forget_after = 1
 			learning_duration = 0
+			instantaneous_baseline = true
 		}
     }
 
@@ -550,7 +2104,7 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
 `, name)
 }
 
-func testAccCheckDatadogSecurityMonitoringUpdateCheckNewValueRule(accProvider func() (*schema.Provider, error), ruleName string) resource.TestCheckFunc {
+func testAccCheckDatadogSecurityMonitoringUpdateCheckNewValueRule(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
 	return resource.ComposeTestCheckFunc(
 		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
 		resource.TestCheckResourceAttr(
@@ -560,11 +2114,15 @@ func testAccCheckDatadogSecurityMonitoringUpdateCheckNewValueRule(accProvider fu
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "enabled", "true"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "query.0.name", "first_updated"),
+			tfSecurityRuleName, "query.0.name", "first"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.query", "does not really match much (updated)"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.aggregation", "new_value"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "logs"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.has_optional_group_by_fields", "false"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.group_by_fields.0", "service"),
 		resource.TestCheckResourceAttr(
@@ -576,8 +2134,6 @@ func testAccCheckDatadogSecurityMonitoringUpdateCheckNewValueRule(accProvider fu
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "case.0.notifications.0", "@user"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "options.0.evaluation_window", "300"),
-		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.keep_alive", "600"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.max_signal_duration", "900"),
@@ -586,11 +2142,17 @@ func testAccCheckDatadogSecurityMonitoringUpdateCheckNewValueRule(accProvider fu
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.new_value_options.0.forget_after", "1"),
 		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.new_value_options.0.learning_method", "duration"),
+		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.new_value_options.0.learning_duration", "0"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.0", "u:tomato"),
+			tfSecurityRuleName, "options.0.new_value_options.0.learning_threshold", "0"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.1", "i:tomato"),
+			tfSecurityRuleName, "options.0.new_value_options.0.instantaneous_baseline", "true"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
 	)
 }
 
@@ -600,13 +2162,15 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
     name = "%s"
     message = "acceptance rule triggered (updated)"
     enabled = true
+    validate = true
 
     query {
 		name = "first"
         query = "@agent.rule_id:(%s_random_id OR random_id)"
         aggregation = "count"
+        data_source = "security_runtime"
         group_by_fields = ["service"]
-        metric = "@network.bytes_read"
+		has_optional_group_by_fields = false
     }
 
     case {
@@ -630,7 +2194,7 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
 `, name, strings.Replace(name, "-", "_", -1))
 }
 
-func testAccCheckDatadogSecurityMonitoringUpdateCheckCwsRule(accProvider func() (*schema.Provider, error), ruleName string) resource.TestCheckFunc {
+func testAccCheckDatadogSecurityMonitoringUpdateCheckCwsRule(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
 	return resource.ComposeTestCheckFunc(
 		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
 		resource.TestCheckResourceAttr(
@@ -646,9 +2210,11 @@ func testAccCheckDatadogSecurityMonitoringUpdateCheckCwsRule(accProvider func() 
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.aggregation", "count"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "query.0.group_by_fields.0", "service"),
+			tfSecurityRuleName, "query.0.data_source", "security_runtime"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "query.0.metric", "@network.bytes_read"),
+			tfSecurityRuleName, "query.0.has_optional_group_by_fields", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.group_by_fields.0", "service"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "case.0.name", "high case (updated)"),
 		resource.TestCheckResourceAttr(
@@ -665,10 +2231,10 @@ func testAccCheckDatadogSecurityMonitoringUpdateCheckCwsRule(accProvider func() 
 			tfSecurityRuleName, "options.0.keep_alive", "600"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.max_signal_duration", "900"),
-		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.0", "u:tomato"),
-		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.1", "i:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "type", "workload_security"),
 	)
@@ -679,14 +2245,16 @@ func testAccCheckDatadogSecurityMonitoringEnabledDefaultConfig(name string) stri
 resource "datadog_security_monitoring_rule" "acceptance_test" {
     name = "%s - updated"
     message = "acceptance rule triggered (updated)"
+    validate = true
 
     query {
         name = "first_updated"
         query = "does not really match much (updated)"
         aggregation = "cardinality"
+        data_source = "logs"
         distinct_fields = ["@orgId"]
         group_by_fields = ["service"]
-        metric = "@network.bytes_read"
+		has_optional_group_by_fields = false
     }
 
     case {
@@ -708,17 +2276,227 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
         max_signal_duration = 600
     }
 
-	filter {
-        query = "does not really suppress (updated)"
-        action = "suppress"
-    }
-
     tags = ["u:tomato", "i:tomato"]
+
+	reference_tables {
+		table_name = "table1"
+		column_name = "column1"
+		log_field_path = "@testattribute"
+		rule_query_name = "first_updated"
+		check_presence = true
+	}
 }
 `, name)
 }
 
-func testAccCheckDatadogSecurityMonitoringEnabledDefaultCheck(accProvider func() (*schema.Provider, error), ruleName string) resource.TestCheckFunc {
+func testAccCheckDatadogSecurityMonitoringCreatedSignalCorrelationConfig(name string) string {
+	logDetectionRule0 := fmt.Sprintf("%s_rule_0", name)
+	logDetectionRule1 := fmt.Sprintf("%s_rule_1", name)
+	return fmt.Sprintf(`
+%s
+%s
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+	name = "%s"
+	message = "acceptance rule triggered"
+	enabled = false
+	// Skipping validation for SignalCorrection rule due to the issue to render the ruleId in the query.
+	validate = false
+	has_extended_title = true
+
+	signal_query {
+		name = "first"
+		rule_id = "${datadog_security_monitoring_rule.acceptance_test_0.id}"
+		aggregation = "event_count"
+		correlated_by_fields = ["host"]
+	}
+
+	signal_query {
+		name = "second"
+		rule_id = "${datadog_security_monitoring_rule.acceptance_test_1.id}"
+		aggregation = "event_count"
+		correlated_by_fields = ["host"]
+		correlated_query_index = "1"
+	}
+
+	case {
+		name = "high case"
+		status = "high"
+		condition = "first > 0 && second > 0"
+		notifications = ["@user"]
+	}
+
+	options {
+		evaluation_window = 300
+		keep_alive = 600
+		max_signal_duration = 900
+	}
+
+	type = "signal_correlation"
+
+	tags = ["alert:red", "attack:advanced"]
+}
+`, testAccCheckDatadogSecurityMonitoringCreatedConfigWithId(logDetectionRule0, "0"),
+		testAccCheckDatadogSecurityMonitoringCreatedConfigWithId(logDetectionRule1, "1"),
+		name)
+}
+
+func testCheckResourceAttrPairSignalCorrelation(name string, queryId int, logDetectionId int) resource.TestCheckFunc {
+	logDetectionName := fmt.Sprintf("%s_%d", name, logDetectionId)
+	signalQuery := fmt.Sprintf("signal_query.%d.rule_id", queryId)
+	return resource.TestCheckResourceAttrPair(name, signalQuery, logDetectionName, "id")
+}
+
+func testAccCheckDatadogSecurityMonitorCreatedSignalCorrelationCheck(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "message", "acceptance rule triggered"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "enabled", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "has_extended_title", "true"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.0.name", "first"),
+		testCheckResourceAttrPairSignalCorrelation(tfSecurityRuleName, 0, 0),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.0.aggregation", "event_count"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.0.correlated_by_fields.0", "host"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.0.correlated_query_index", ""),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.1.name", "second"),
+		testCheckResourceAttrPairSignalCorrelation(tfSecurityRuleName, 1, 1),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.1.aggregation", "event_count"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.1.correlated_by_fields.0", "host"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.1.correlated_query_index", "1"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.name", "high case"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.status", "high"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.condition", "first > 0 && second > 0"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.notifications.0", "@user"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.evaluation_window", "300"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.keep_alive", "600"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.max_signal_duration", "900"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "alert:red"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "attack:advanced"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdatedSignalCorrelationConfig(name string) string {
+	logDetectionRule0 := fmt.Sprintf("%s_rule_0", name)
+	logDetectionRule1 := fmt.Sprintf("%s_rule_1", name)
+	return fmt.Sprintf(`
+%s
+%s
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+	name = "%s - updated"
+	message = "acceptance rule triggered (updated)"
+	enabled = true
+	validate = false
+	has_extended_title = false
+
+	signal_query {
+		name = "first_updated"
+		rule_id = "${datadog_security_monitoring_rule.acceptance_test_0.id}"
+		correlated_by_fields = ["service"]
+		aggregation = "event_count"
+	}
+
+	signal_query {
+		name = "second_updated"
+		rule_id = "${datadog_security_monitoring_rule.acceptance_test_1.id}"
+		correlated_by_fields = ["service"]
+		correlated_query_index = "1"
+		aggregation = "event_count"
+	}
+
+	case {
+		name = "high case (updated)"
+		status = "medium"
+		condition = "first_updated > 0 && second_updated > 0"
+		notifications = ["@user"]
+	}
+
+	options {
+		evaluation_window = 60
+		keep_alive = 300
+		max_signal_duration = 600
+	}
+
+	type = "signal_correlation"
+
+	tags = ["alert:red", "attack:advanced"]
+}
+`, testAccCheckDatadogSecurityMonitoringCreatedConfigWithId(logDetectionRule0, "0"),
+		testAccCheckDatadogSecurityMonitoringCreatedConfigWithId(logDetectionRule1, "1"),
+		name)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdateSignalCorrelationCheck(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "name", ruleName+" - updated"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "message", "acceptance rule triggered (updated)"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "enabled", "true"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "has_extended_title", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.0.name", "first_updated"),
+		testCheckResourceAttrPairSignalCorrelation(tfSecurityRuleName, 0, 0),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.0.aggregation", "event_count"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.0.correlated_by_fields.0", "service"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.0.correlated_query_index", ""),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.1.name", "second_updated"),
+		testCheckResourceAttrPairSignalCorrelation(tfSecurityRuleName, 1, 1),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.1.aggregation", "event_count"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.1.correlated_by_fields.0", "service"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "signal_query.1.correlated_query_index", "1"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.name", "high case (updated)"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.status", "medium"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.condition", "first_updated > 0 && second_updated > 0"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.notifications.0", "@user"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.evaluation_window", "60"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.keep_alive", "300"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.max_signal_duration", "600"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "alert:red"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "attack:advanced"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringEnabledDefaultCheck(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
 	return resource.ComposeTestCheckFunc(
 		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
 		resource.TestCheckResourceAttr(
@@ -737,8 +2515,6 @@ func testAccCheckDatadogSecurityMonitoringEnabledDefaultCheck(accProvider func()
 			tfSecurityRuleName, "query.0.distinct_fields.0", "@orgId"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.group_by_fields.0", "service"),
-		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "query.0.metric", "@network.bytes_read"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "case.0.name", "high case (updated)"),
 		resource.TestCheckResourceAttr(
@@ -759,14 +2535,20 @@ func testAccCheckDatadogSecurityMonitoringEnabledDefaultCheck(accProvider func()
 			tfSecurityRuleName, "options.0.keep_alive", "300"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "options.0.max_signal_duration", "600"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "filter.0.action", "suppress"),
+			tfSecurityRuleName, "reference_tables.0.table_name", "table1"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "filter.0.query", "does not really suppress (updated)"),
+			tfSecurityRuleName, "reference_tables.0.column_name", "column1"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.0", "u:tomato"),
+			tfSecurityRuleName, "reference_tables.0.log_field_path", "@testattribute"),
 		resource.TestCheckResourceAttr(
-			tfSecurityRuleName, "tags.1", "i:tomato"),
+			tfSecurityRuleName, "reference_tables.0.rule_query_name", "first_updated"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "reference_tables.0.check_presence", "true"),
 	)
 }
 
@@ -775,11 +2557,14 @@ func testAccCheckDatadogSecurityMonitoringCreatedRequiredConfig(name string) str
 resource "datadog_security_monitoring_rule" "acceptance_test" {
     name = "%s"
     message = "acceptance rule triggered"
+    validate = true
 
     query {
         query = "does not really match much"
         aggregation = "count"
+        data_source = "logs"
         group_by_fields = ["host"]
+		has_optional_group_by_fields = false
     }
 
     case {
@@ -796,7 +2581,7 @@ resource "datadog_security_monitoring_rule" "acceptance_test" {
 `, name)
 }
 
-func testAccCheckDatadogSecurityMonitorCreatedRequiredCheck(accProvider func() (*schema.Provider, error), ruleName string) resource.TestCheckFunc {
+func testAccCheckDatadogSecurityMonitorCreatedRequiredCheck(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
 	return resource.ComposeTestCheckFunc(
 		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
 		resource.TestCheckResourceAttr(
@@ -807,6 +2592,10 @@ func testAccCheckDatadogSecurityMonitorCreatedRequiredCheck(accProvider func() (
 			tfSecurityRuleName, "query.0.query", "does not really match much"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.aggregation", "count"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "logs"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.has_optional_group_by_fields", "false"),
 		resource.TestCheckResourceAttr(
 			tfSecurityRuleName, "query.0.group_by_fields.0", "host"),
 		resource.TestCheckResourceAttr(
@@ -822,15 +2611,154 @@ func testAccCheckDatadogSecurityMonitorCreatedRequiredCheck(accProvider func() (
 	)
 }
 
-func testAccCheckDatadogSecurityMonitoringRuleExists(accProvider func() (*schema.Provider, error), rule string) resource.TestCheckFunc {
+func testAccCheckDatadogSecurityMonitoringCreatedThirdPartyConfig(ruleName string) string {
+	return fmt.Sprintf(`
+		resource "datadog_security_monitoring_rule" "acceptance_test" {
+			name = "%s"
+			message = "third party rule triggered"
+		    validate = true
+
+			third_party_case {
+				query         = "@alert.severity:[5 TO 10]"
+				name          = "High severity alert"
+				status        = "high"
+				notifications = ["@slack-channel"]
+			}
+
+			third_party_case {
+				query  = "@alert.severity:[1 TO 4]"
+				name   = "Low severity alert"
+				status = "low"
+			}
+
+			options {
+				detection_method = "third_party"
+				keep_alive = 0
+				max_signal_duration = 900
+
+				third_party_rule_options {
+					default_status = "info"
+
+					root_query {
+						query           = "source:guardduty @data.resourceType:*EC2*"
+						group_by_fields = ["instance-id"]
+					}
+
+					root_query {
+						query           = "source:guardduty"
+						group_by_fields = []
+					}
+				}
+			}
+		}
+	`, ruleName)
+}
+
+func testAccCheckDatadogSecurityMonitoringCreatedThirdPartyCheck(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "message", "third party rule triggered"),
+		// Cases and queries should not be set for third party rules
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "case.#", "0"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "query.#", "0"),
+		// Instead, third party cases should be set
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.0.query", "@alert.severity:[5 TO 10]"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.0.name", "High severity alert"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.0.status", "high"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.0.notifications.0", "@slack-channel"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.1.query", "@alert.severity:[1 TO 4]"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.1.name", "Low severity alert"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.1.status", "low"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.third_party_rule_options.0.default_status", "info"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.third_party_rule_options.0.root_query.0.query", "source:guardduty @data.resourceType:*EC2*"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.third_party_rule_options.0.root_query.0.group_by_fields.0", "instance-id"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.third_party_rule_options.0.root_query.1.query", "source:guardduty"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdatedThirdPartyConfig(ruleName string) string {
+	// Add an additional root query
+	return fmt.Sprintf(`
+		resource "datadog_security_monitoring_rule" "acceptance_test" {
+			name = "%s"
+			message = "third party rule triggered"
+    		validate = true
+
+			third_party_case {
+				query         = "@alert.severity:[5 TO 10]"
+				name          = "High severity alert"
+				status        = "high"
+				notifications = ["@slack-channel"]
+			}
+
+			third_party_case {
+				query  = "@alert.severity:[1 TO 4]"
+				name   = "Low severity alert"
+				status = "low"
+			}
+
+			options {
+				detection_method = "third_party"
+				keep_alive = 0
+				max_signal_duration = 900
+
+				third_party_rule_options {
+					default_status = "info"
+
+					root_query {
+						query           = "source:guardduty @data.resourceType:*EC2*"
+						group_by_fields = ["instance-id"]
+					}
+
+					root_query {
+						query           = "source:guardduty @data.resourceType:*S3*"
+						group_by_fields = ["@resourceProperties.bucketId"]
+					}
+
+					root_query {
+						query           = "source:guardduty"
+						group_by_fields = []
+					}
+				}
+			}
+		}
+	`, ruleName)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdatedThirdPartyCheck(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "message", "third party rule triggered"),
+		// Cases and queries should not be set for third party rules
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "case.#", "0"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "query.#", "0"),
+		// Instead, third party cases should be set
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.0.query", "@alert.severity:[5 TO 10]"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.0.name", "High severity alert"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.0.status", "high"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.0.notifications.0", "@slack-channel"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.1.query", "@alert.severity:[1 TO 4]"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.1.name", "Low severity alert"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "third_party_case.1.status", "low"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.third_party_rule_options.0.default_status", "info"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.third_party_rule_options.0.root_query.0.query", "source:guardduty @data.resourceType:*EC2*"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.third_party_rule_options.0.root_query.0.group_by_fields.0", "instance-id"),
+		// The additional root query should be set
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.third_party_rule_options.0.root_query.1.query", "source:guardduty @data.resourceType:*S3*"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.third_party_rule_options.0.root_query.1.group_by_fields.0", "@resourceProperties.bucketId"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "options.0.third_party_rule_options.0.root_query.2.query", "source:guardduty"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringRuleExists(accProvider *fwprovider.FrameworkProvider, rule string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		authV2 := providerConf.AuthV2
-		client := providerConf.DatadogClientV2
+		apiInstances := accProvider.DatadogApiInstances
+		auth := accProvider.Auth
 
 		for _, rule := range s.RootModule().Resources {
-			_, _, err := client.SecurityMonitoringApi.GetSecurityMonitoringRule(authV2, rule.Primary.ID)
+			_, _, err := apiInstances.GetSecurityMonitoringApiV2().GetSecurityMonitoringRule(auth, rule.Primary.ID)
 			if err != nil {
 				return fmt.Errorf("received an error retrieving security monitoring rule: %s", err)
 			}
@@ -839,16 +2767,14 @@ func testAccCheckDatadogSecurityMonitoringRuleExists(accProvider func() (*schema
 	}
 }
 
-func testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider func() (*schema.Provider, error)) resource.TestCheckFunc {
+func testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider *fwprovider.FrameworkProvider) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		authV2 := providerConf.AuthV2
-		client := providerConf.DatadogClientV2
+		apiInstances := accProvider.DatadogApiInstances
+		auth := accProvider.Auth
 
 		for _, resource := range s.RootModule().Resources {
 			if resource.Type == "datadog_security_monitoring_rule" {
-				_, httpResponse, err := client.SecurityMonitoringApi.GetSecurityMonitoringRule(authV2, resource.Primary.ID)
+				_, httpResponse, err := apiInstances.GetSecurityMonitoringApiV2().GetSecurityMonitoringRule(auth, resource.Primary.ID)
 				if err != nil {
 					if httpResponse != nil && httpResponse.StatusCode == 404 {
 						continue
@@ -860,5 +2786,733 @@ func testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider func() (*schem
 		}
 		return nil
 	}
+}
 
+func testAccCheckDatadogSecurityMonitoringCreatedConfigAppsecRule(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+	name = "%s"
+	message = "acceptance rule triggered"
+	enabled = false
+	validate = true
+
+	query {
+		name = "first"
+		query = "@appsec.security_activity:attack_attempt.*"
+		aggregation = "count"
+		data_source = "spans"
+		group_by_fields = ["service", "env"]
+		has_optional_group_by_fields = false
+	}
+
+	case {
+		name = "high case"
+		status = "high"
+		condition = "first > 600000"
+		action {
+			type = "block_ip"
+			options {
+				duration = 3600
+			}
+		}
+		action {
+			type = "block_user"
+		}
+	}
+
+	options {
+		detection_method = "threshold"
+		evaluation_window = 300
+		keep_alive = 600
+		max_signal_duration = 900
+	}
+
+	group_signals_by = ["service"]
+
+	tags = ["i:tomato", "u:tomato"]
+
+	type = "application_security"
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitoringCreatedCheckAppsecRule(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "message", "acceptance rule triggered"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "enabled", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.name", "first"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.query", "@appsec.security_activity:attack_attempt.*"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.aggregation", "count"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "spans"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.has_optional_group_by_fields", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.group_by_fields.0", "service"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.group_by_fields.1", "env"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.name", "high case"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.status", "high"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.condition", "first > 600000"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.action.0.type", "block_ip"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.action.0.options.0.duration", "3600"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.action.1.type", "block_user"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.detection_method", "threshold"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.evaluation_window", "300"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.keep_alive", "600"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.max_signal_duration", "900"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "group_signals_by.0", "service"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "type", "application_security"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdatedConfigAppsecRule(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+	name = "%s - updated"
+	message = "acceptance rule triggered (updated)"
+	enabled = true
+    validate = true
+
+	query {
+		name = "first"
+		query = "@appsec.security_activity:attack_attempt.*"
+		aggregation = "count"
+		data_source = "spans"
+		group_by_fields = ["service", "env"]
+		has_optional_group_by_fields = false
+	}
+
+	case {
+		name = "high case"
+		status = "high"
+		condition = "first > 500000"
+		action {
+		    type = "block_ip"
+			options {
+			    duration = 7200
+			}
+		}
+		action {
+			type = "block_user"
+		}
+	}
+
+	options {
+		detection_method = "threshold"
+		evaluation_window = 600
+		keep_alive = 600
+		max_signal_duration = 1800
+	}
+
+	group_signals_by = ["service"]
+
+	tags = ["i:tomato", "u:tomato"]
+
+	type = "application_security"
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitoringUpdateCheckAppsecRule(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "name", ruleName+" - updated"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "message", "acceptance rule triggered (updated)"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "enabled", "true"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.name", "first"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.query", "@appsec.security_activity:attack_attempt.*"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.aggregation", "count"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "spans"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.has_optional_group_by_fields", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.group_by_fields.0", "service"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.group_by_fields.1", "env"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.name", "high case"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.status", "high"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.condition", "first > 500000"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.action.0.type", "block_ip"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.action.0.options.0.duration", "7200"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.action.1.type", "block_user"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.detection_method", "threshold"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.evaluation_window", "600"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.keep_alive", "600"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.max_signal_duration", "1800"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "group_signals_by.0", "service"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "type", "application_security"),
+	)
+}
+
+func testAccCheckDatadogSecurityMonitoringDefaultTags(name string) string {
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "acceptance rule triggered"
+    enabled = false
+    validate = true
+    has_extended_title = true
+
+    query {
+        name = "first"
+        query = "does not really match much"
+        aggregation = "count"
+        group_by_fields = ["host"]
+    }
+
+    query {
+        name = "second"
+        query = "does not really match much either"
+        aggregation = "cardinality"
+        distinct_fields = ["@orgId"]
+        group_by_fields = ["host"]
+    }
+
+	query {
+		name = "third"
+        query = "does not really match much either"
+        aggregation = "sum"
+        group_by_fields = ["host"]
+        metric = "@network.bytes_read"
+    }
+
+    case {
+        name = "high case"
+        status = "high"
+        condition = "first > 3 || second > 10"
+        notifications = ["@user"]
+    }
+
+    case {
+        name = "warning case"
+        status = "medium"
+        condition = "first > 0 || second > 0"
+    }
+
+	case {
+		name = "low case"
+		status = "low"
+		condition = "third > 9000"
+	}
+
+    options {
+        evaluation_window = 300
+        keep_alive = 600
+        max_signal_duration = 900
+        decrease_criticality_based_on_env = true
+    }
+
+  	tags = ["foo:bar", "baz"]
+
+	reference_tables {
+		table_name = "table1"
+		column_name = "column1"
+		log_field_path = "@testattribute"
+		rule_query_name = "first"
+		check_presence = true
+	}
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitoringDuplicateTags(name string) string {
+
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "acceptance rule triggered"
+    enabled = false
+    validate = true
+    has_extended_title = true
+
+    query {
+        name = "first"
+        query = "does not really match much"
+        aggregation = "count"
+        group_by_fields = ["host"]
+    }
+
+    query {
+        name = "second"
+        query = "does not really match much either"
+        aggregation = "cardinality"
+        distinct_fields = ["@orgId"]
+        group_by_fields = ["host"]
+    }
+
+	query {
+		name = "third"
+        query = "does not really match much either"
+        aggregation = "sum"
+        group_by_fields = ["host"]
+        metric = "@network.bytes_read"
+    }
+
+    case {
+        name = "high case"
+        status = "high"
+        condition = "first > 3 || second > 10"
+        notifications = ["@user"]
+    }
+
+    case {
+        name = "warning case"
+        status = "medium"
+        condition = "first > 0 || second > 0"
+    }
+
+	case {
+		name = "low case"
+		status = "low"
+		condition = "third > 9000"
+	}
+
+    options {
+        evaluation_window = 300
+        keep_alive = 600
+        max_signal_duration = 900
+        decrease_criticality_based_on_env = true
+    }
+
+
+    tags = ["foo:bar", "baz", "foo:double_bar"]
+
+	reference_tables {
+		table_name = "table1"
+		column_name = "column1"
+		log_field_path = "@testattribute"
+		rule_query_name = "first"
+		check_presence = true
+	}
+}
+`, name)
+}
+
+func testAccCheckDatadogSecurityMonitoringNoTag(name string) string {
+
+	return fmt.Sprintf(`
+resource "datadog_security_monitoring_rule" "acceptance_test" {
+    name = "%s"
+    message = "acceptance rule triggered"
+    enabled = false
+    validate = true
+    has_extended_title = true
+
+    query {
+        name = "first"
+        query = "does not really match much"
+        aggregation = "count"
+        group_by_fields = ["host"]
+    }
+
+    query {
+        name = "second"
+        query = "does not really match much either"
+        aggregation = "cardinality"
+        distinct_fields = ["@orgId"]
+        group_by_fields = ["host"]
+    }
+
+	query {
+		name = "third"
+        query = "does not really match much either"
+        aggregation = "sum"
+        group_by_fields = ["host"]
+        metric = "@network.bytes_read"
+    }
+
+    case {
+        name = "high case"
+        status = "high"
+        condition = "first > 3 || second > 10"
+        notifications = ["@user"]
+    }
+
+    case {
+        name = "warning case"
+        status = "medium"
+        condition = "first > 0 || second > 0"
+    }
+
+	case {
+		name = "low case"
+		status = "low"
+		condition = "third > 9000"
+	}
+
+    options {
+        evaluation_window = 300
+        keep_alive = 600
+        max_signal_duration = 900
+        decrease_criticality_based_on_env = true
+    }
+
+
+	reference_tables {
+		table_name = "table1"
+		column_name = "column1"
+		log_field_path = "@testattribute"
+		rule_query_name = "first"
+		check_presence = true
+	}
+}
+`, name)
+}
+
+func testAccDatadogSecurityMonitoringScheduledRuleConfig(name string) string {
+	return fmt.Sprintf(`
+		resource "datadog_security_monitoring_rule" "acceptance_test" {
+			name = "%s"
+			message = "acceptance rule triggered by scheduled rule"
+			enabled = false
+			validate = true
+			has_extended_title = true
+
+			query {
+				name = "first"
+				query = "does not really match much"
+				aggregation = "count"
+				data_source = "logs"
+				group_by_fields = ["host"]
+				indexes = ["cloud-siem-index"]
+			}
+
+			query {
+				name = "second"
+				query = "does not really match much either"
+				aggregation = "cardinality"
+				data_source = "logs"	
+				distinct_fields = ["@orgId"]
+				group_by_fields = ["host"]
+				indexes = ["cloud-siem-index"]
+			}
+
+			query {
+				name = "third"
+				query = "does not really match much either"
+				aggregation = "sum"
+				data_source = "logs"
+				group_by_fields = ["host"]
+				metric = "@network.bytes_read"
+				indexes = ["cloud-siem-index"]
+			}
+
+			case {
+				name = "high case"
+				status = "high"
+				condition = "first > 3 || second > 10"
+				notifications = ["@user"]
+			}
+
+			case {
+				name = "warning case"
+				status = "medium"
+				condition = "first > 0 || second > 0"
+			}
+
+			case {
+				name = "low case"
+				status = "low"
+				condition = "third > 9000"
+			}
+
+			options {
+				evaluation_window = 300
+				keep_alive = 600
+				max_signal_duration = 900
+				decrease_criticality_based_on_env = true
+			}
+
+			tags = ["i:tomato", "u:tomato"]
+
+			reference_tables {
+				table_name = "table1"
+				column_name = "column1"
+				log_field_path = "@testattribute"
+				rule_query_name = "first"
+				check_presence = true
+			}
+
+			calculated_field {
+				name = "calc_field"
+				expression = "lower(@log.nested.field)"
+			}
+
+			scheduling_options {
+				rrule = "FREQ=MINUTELY;INTERVAL=40"
+				start = "2025-08-15T12:00:00"
+				timezone = "Europe/Paris"
+			}
+		}
+	`, name)
+}
+
+func checkSecurityMonitoringScheduledRuleCommonPart(ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "name", ruleName),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "message", "acceptance rule triggered by scheduled rule"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "enabled", "false"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "has_extended_title", "true"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.name", "first"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.query", "does not really match much"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.aggregation", "count"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.data_source", "logs"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.group_by_fields.0", "host"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.indexes.0", "cloud-siem-index"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.0.indexes.#", "1"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.1.name", "second"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.1.query", "does not really match much either"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.1.aggregation", "cardinality"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.1.data_source", "logs"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.1.distinct_fields.0", "@orgId"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.1.group_by_fields.0", "host"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.1.indexes.0", "cloud-siem-index"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.1.indexes.#", "1"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.name", "third"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.query", "does not really match much either"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.aggregation", "sum"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.data_source", "logs"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.group_by_fields.0", "host"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.metric", "@network.bytes_read"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.indexes.0", "cloud-siem-index"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "query.2.indexes.#", "1"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.name", "high case"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.status", "high"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.condition", "first > 3 || second > 10"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.0.notifications.0", "@user"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.1.name", "warning case"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.1.status", "medium"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.1.condition", "first > 0 || second > 0"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.2.name", "low case"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.2.status", "low"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "case.2.condition", "third > 9000"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.evaluation_window", "300"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.keep_alive", "600"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.max_signal_duration", "900"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "options.0.decrease_criticality_based_on_env", "true"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "i:tomato"),
+		resource.TestCheckTypeSetElemAttr(
+			tfSecurityRuleName, "tags.*", "u:tomato"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "reference_tables.0.table_name", "table1"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "reference_tables.0.column_name", "column1"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "reference_tables.0.log_field_path", "@testattribute"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "reference_tables.0.rule_query_name", "first"),
+		resource.TestCheckResourceAttr(
+			tfSecurityRuleName, "reference_tables.0.check_presence", "true"),
+	)
+}
+
+func checkSecurityMonitoringSchedulingOptions(resourceName, rrule, start, timezone string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		resource.TestCheckResourceAttr(
+			resourceName, "scheduling_options.0.rrule", rrule),
+		resource.TestCheckResourceAttr(
+			resourceName, "scheduling_options.0.start", start),
+		resource.TestCheckResourceAttr(
+			resourceName, "scheduling_options.0.timezone", timezone),
+	)
+}
+
+func checkSecurityMonitoringCalculatedField(resourceName string, index int, name string, expression string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		resource.TestCheckResourceAttr(
+			resourceName, fmt.Sprintf("calculated_field.%d.name", index), name),
+		resource.TestCheckResourceAttr(
+			resourceName, fmt.Sprintf("calculated_field.%d.expression", index), expression),
+	)
+}
+
+func testAccDatadogSecurityMonitoringScheduledRuleCheck(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		checkSecurityMonitoringScheduledRuleCommonPart(ruleName),
+		checkSecurityMonitoringSchedulingOptions(tfSecurityRuleName, "FREQ=MINUTELY;INTERVAL=40", "2025-08-15T12:00:00", "Europe/Paris"),
+		checkSecurityMonitoringCalculatedField(tfSecurityRuleName, 0, "calc_field", "lower(@log.nested.field)"),
+	)
+}
+
+func testAccDatadogSecurityMonitoringScheduledRuleUpdateConfig(name string) string {
+	return fmt.Sprintf(`
+		resource "datadog_security_monitoring_rule" "acceptance_test" {
+			name = "%s"
+			message = "acceptance rule triggered by scheduled rule"
+			enabled = false
+			validate = true
+			has_extended_title = true
+
+			query {
+				name = "first"
+				query = "does not really match much"
+				aggregation = "count"
+				data_source = "logs"
+				group_by_fields = ["host"]
+				indexes = ["cloud-siem-index"]
+			}
+
+			query {
+				name = "second"
+				query = "does not really match much either"
+				aggregation = "cardinality"
+				data_source = "logs"	
+				distinct_fields = ["@orgId"]
+				group_by_fields = ["host"]
+				indexes = ["cloud-siem-index"]
+			}
+
+			query {
+				name = "third"
+				query = "does not really match much either"
+				aggregation = "sum"
+				data_source = "logs"
+				group_by_fields = ["host"]
+				metric = "@network.bytes_read"
+				indexes = ["cloud-siem-index"]
+			}
+
+			case {
+				name = "high case"
+				status = "high"
+				condition = "first > 3 || second > 10"
+				notifications = ["@user"]
+			}
+
+			case {
+				name = "warning case"
+				status = "medium"
+				condition = "first > 0 || second > 0"
+			}
+
+			case {
+				name = "low case"
+				status = "low"
+				condition = "third > 9000"
+			}
+
+			options {
+				evaluation_window = 300
+				keep_alive = 600
+				max_signal_duration = 900
+				decrease_criticality_based_on_env = true
+			}
+
+			tags = ["i:tomato", "u:tomato"]
+
+			reference_tables {
+				table_name = "table1"
+				column_name = "column1"
+				log_field_path = "@testattribute"
+				rule_query_name = "first"
+				check_presence = true
+			}
+
+			scheduling_options {
+				rrule = "FREQ=HOURLY;INTERVAL=2"
+				start = "2025-08-15T14:00:00"
+				timezone = "Europe/Paris"
+			}
+		}
+	`, name)
+}
+
+func testAccDatadogSecurityMonitoringScheduledRuleUpdateCheck(accProvider *fwprovider.FrameworkProvider, ruleName string) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
+		testAccCheckDatadogSecurityMonitoringRuleExists(accProvider, tfSecurityRuleName),
+		checkSecurityMonitoringScheduledRuleCommonPart(ruleName),
+		checkSecurityMonitoringSchedulingOptions(tfSecurityRuleName, "FREQ=HOURLY;INTERVAL=2", "2025-08-15T14:00:00", "Europe/Paris"),
+		resource.TestCheckResourceAttr(tfSecurityRuleName, "calculated_field.#", "0"),
+	)
 }

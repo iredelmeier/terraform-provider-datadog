@@ -7,7 +7,7 @@ import (
 
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 
-	datadogV1 "github.com/DataDog/datadog-api-client-go/api/v1/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -26,71 +26,77 @@ func resourceDatadogIntegrationSlackChannel() *schema.Resource {
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
-		Schema: map[string]*schema.Schema{
-			"channel_name": {
-				Type:        schema.TypeString,
-				Required:    true,
-				Description: "Slack channel name.",
-			},
-			"account_name": {
-				Type:        schema.TypeString,
-				Required:    true,
-				ForceNew:    true,
-				Description: "Slack account name.",
-			},
-			"display": {
-				Type:        schema.TypeList,
-				Required:    true,
-				Description: "Configuration options for what is shown in an alert event message.",
-				MaxItems:    1,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"message": {
-							Type:        schema.TypeBool,
-							Optional:    true,
-							Description: "Show the main body of the alert event.",
-							Default:     true,
-						},
-						"notified": {
-							Type:        schema.TypeBool,
-							Optional:    true,
-							Description: "Show the list of @-handles in the alert event.",
-							Default:     true,
-						},
-						"snapshot": {
-							Type:        schema.TypeBool,
-							Optional:    true,
-							Description: "Show the alert event's snapshot image.",
-							Default:     true,
-						},
-						"tags": {
-							Type:        schema.TypeBool,
-							Optional:    true,
-							Description: "Show the scopes on which the monitor alerted.",
-							Default:     true,
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"channel_name": {
+					Type:        schema.TypeString,
+					Required:    true,
+					Description: "Slack channel name.",
+				},
+				"account_name": {
+					Type:        schema.TypeString,
+					Required:    true,
+					ForceNew:    true,
+					Description: "Slack account name.",
+				},
+				"display": {
+					Type:        schema.TypeList,
+					Required:    true,
+					Description: "Configuration options for what is shown in an alert event message.",
+					MaxItems:    1,
+					Elem: &schema.Resource{
+						Schema: map[string]*schema.Schema{
+							"message": {
+								Type:        schema.TypeBool,
+								Optional:    true,
+								Description: "Show the main body of the alert event.",
+								Default:     true,
+							},
+							"notified": {
+								Type:        schema.TypeBool,
+								Optional:    true,
+								Description: "Show the list of @-handles in the alert event.",
+								Default:     true,
+							},
+							"snapshot": {
+								Type:        schema.TypeBool,
+								Optional:    true,
+								Description: "Show the alert event's snapshot image.",
+								Default:     true,
+							},
+							"tags": {
+								Type:        schema.TypeBool,
+								Optional:    true,
+								Description: "Show the scopes on which the monitor alerted.",
+								Default:     true,
+							},
+							"mute_buttons": {
+								Type:        schema.TypeBool,
+								Optional:    true,
+								Description: "Show interactive buttons to mute the alerting monitor.",
+								Default:     true,
+							},
 						},
 					},
 				},
-			},
+			}
 		},
 	}
 }
 
 func buildDatadogSlackChannel(d *schema.ResourceData) *datadogV1.SlackIntegrationChannel {
-	k := utils.NewResourceDataKey(d, "")
 	datadogSlackChannel := datadogV1.NewSlackIntegrationChannelWithDefaults()
 
-	if v, ok := k.GetOkWith("channel_name"); ok {
+	if v, ok := d.GetOk("channel_name"); ok {
 		datadogSlackChannel.SetName(v.(string))
 	}
 
-	k.Add("display.0")
 	resultDisplay := datadogV1.NewSlackIntegrationChannelDisplayWithDefaults()
-	resultDisplay.SetMessage(k.GetWith("message").(bool))
-	resultDisplay.SetNotified(k.GetWith("notified").(bool))
-	resultDisplay.SetSnapshot(k.GetWith("snapshot").(bool))
-	resultDisplay.SetTags(k.GetWith("tags").(bool))
-	k.Remove("display.0")
+	resultDisplay.SetMessage(d.Get("display.0.message").(bool))
+	resultDisplay.SetNotified(d.Get("display.0.notified").(bool))
+	resultDisplay.SetSnapshot(d.Get("display.0.snapshot").(bool))
+	resultDisplay.SetTags(d.Get("display.0.tags").(bool))
+	resultDisplay.SetMuteButtons(d.Get("display.0.mute_buttons").(bool))
 
 	datadogSlackChannel.SetDisplay(*resultDisplay)
 
@@ -99,8 +105,8 @@ func buildDatadogSlackChannel(d *schema.ResourceData) *datadogV1.SlackIntegratio
 
 func resourceDatadogIntegrationSlackChannelCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV1
-	auth := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	integrationSlackChannelMutex.Lock()
 	defer integrationSlackChannelMutex.Unlock()
@@ -108,7 +114,7 @@ func resourceDatadogIntegrationSlackChannelCreate(ctx context.Context, d *schema
 	ddSlackChannel := buildDatadogSlackChannel(d)
 	accountName := d.Get("account_name").(string)
 
-	createdChannel, httpresp, err := datadogClient.SlackIntegrationApi.CreateSlackIntegrationChannel(auth, accountName, *ddSlackChannel)
+	createdChannel, httpresp, err := apiInstances.GetSlackIntegrationApiV1().CreateSlackIntegrationChannel(auth, accountName, *ddSlackChannel)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpresp, "error creating slack channel")
 	}
@@ -122,15 +128,15 @@ func resourceDatadogIntegrationSlackChannelCreate(ctx context.Context, d *schema
 
 func resourceDatadogIntegrationSlackChannelRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV1
-	auth := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	accountName, channelName, err := utils.AccountNameAndChannelNameFromID(d.Id())
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	slackChannel, httpresp, err := datadogClient.SlackIntegrationApi.GetSlackIntegrationChannel(auth, accountName, channelName)
+	slackChannel, httpresp, err := apiInstances.GetSlackIntegrationApiV1().GetSlackIntegrationChannel(auth, accountName, channelName)
 	if err != nil {
 		if httpresp.StatusCode == 404 {
 			d.SetId("")
@@ -147,8 +153,8 @@ func resourceDatadogIntegrationSlackChannelRead(ctx context.Context, d *schema.R
 
 func resourceDatadogIntegrationSlackChannelUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV1
-	auth := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	integrationSlackChannelMutex.Lock()
 	defer integrationSlackChannelMutex.Unlock()
@@ -159,7 +165,7 @@ func resourceDatadogIntegrationSlackChannelUpdate(ctx context.Context, d *schema
 		return diag.FromErr(err)
 	}
 
-	slackChannel, httpresp, err := datadogClient.SlackIntegrationApi.UpdateSlackIntegrationChannel(auth, accountName, channelName, *ddObject)
+	slackChannel, httpresp, err := apiInstances.GetSlackIntegrationApiV1().UpdateSlackIntegrationChannel(auth, accountName, channelName, *ddObject)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpresp, "error updating slack channel")
 	}
@@ -175,8 +181,8 @@ func resourceDatadogIntegrationSlackChannelUpdate(ctx context.Context, d *schema
 
 func resourceDatadogIntegrationSlackChannelDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV1
-	auth := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	integrationSlackChannelMutex.Lock()
 	defer integrationSlackChannelMutex.Unlock()
@@ -186,7 +192,7 @@ func resourceDatadogIntegrationSlackChannelDelete(ctx context.Context, d *schema
 		return diag.FromErr(err)
 	}
 
-	httpresp, err := datadogClient.SlackIntegrationApi.RemoveSlackIntegrationChannel(auth, accountName, channelName)
+	httpresp, err := apiInstances.GetSlackIntegrationApiV1().RemoveSlackIntegrationChannel(auth, accountName, channelName)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpresp, "error deleting slack channel")
 	}
@@ -222,6 +228,6 @@ func buildTerraformSlackChannelDisplay(ddChannelDisplay datadogV1.SlackIntegrati
 	tfChannelDisplay["notified"] = ddChannelDisplay.GetNotified()
 	tfChannelDisplay["snapshot"] = ddChannelDisplay.GetSnapshot()
 	tfChannelDisplay["tags"] = ddChannelDisplay.GetTags()
-
+	tfChannelDisplay["mute_buttons"] = ddChannelDisplay.GetMuteButtons()
 	return tfChannelDisplay
 }

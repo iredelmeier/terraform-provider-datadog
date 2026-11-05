@@ -13,11 +13,47 @@ Provides a Datadog synthetics global variable resource. This can be used to crea
 ## Example Usage
 
 ```terraform
+# Basic Usage
 resource "datadog_synthetics_global_variable" "test_variable" {
   name        = "EXAMPLE_VARIABLE"
   description = "Description of the variable"
   tags        = ["foo:bar", "env:test"]
   value       = "variable-value"
+}
+
+# Write-Only Value (Recommended for Terraform 1.11+)
+resource "datadog_synthetics_global_variable" "secure_variable" {
+  name        = "SECURE_VARIABLE"
+  description = "Secure global variable with write-only value"
+  tags        = ["foo:bar", "env:production"]
+  secure      = true
+
+  # Write-only value with version trigger
+  value_wo         = var.secret_value
+  value_wo_version = "1" # Any string: "1", "v2.1", "2024-Q1", etc.
+}
+
+# Advanced: Automated Version Management
+locals {
+  secret_keepers = {
+    rotation_date   = "2024-02-15"
+    environment     = "production"
+    security_policy = "v3.1"
+  }
+
+  # Auto-generate version from keepers
+  secret_version = "rotation-${substr(md5(jsonencode(local.secret_keepers)), 0, 8)}"
+}
+
+resource "datadog_synthetics_global_variable" "automated_rotation" {
+  name        = "AUTO_ROTATED_VARIABLE"
+  description = "Variable with automated rotation"
+  tags        = ["foo:bar", "env:production"]
+  secure      = true
+
+  # Version automatically updates when any keeper changes
+  value_wo         = var.secret_value
+  value_wo_version = local.secret_version
 }
 ```
 
@@ -26,48 +62,75 @@ resource "datadog_synthetics_global_variable" "test_variable" {
 
 ### Required
 
-- **name** (String) Synthetics global variable name.
-- **value** (String, Sensitive) The value of the global variable.
+- `name` (String) Synthetics global variable name. Must be all uppercase with underscores.
 
 ### Optional
 
-- **description** (String) Description of the global variable.
-- **parse_test_id** (String) Id of the Synthetics test to use for a variable from test.
-- **parse_test_options** (Block List, Max: 1) ID of the Synthetics test to use a source of the global variable value. (see [below for nested schema](#nestedblock--parse_test_options))
-- **restricted_roles** (Set of String) A list of role identifiers to associate with the Synthetics global variable.
-- **secure** (Boolean) If set to true, the value of the global variable is hidden. Defaults to `false`.
-- **tags** (List of String) A list of tags to associate with your synthetics global variable.
+> **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
+
+- `description` (String) Description of the global variable. Defaults to `""`.
+- `is_fido` (Boolean) If set to true, the global variable is a FIDO variable. Defaults to `false`.
+- `is_totp` (Boolean) If set to true, the global variable is a TOTP variable. Defaults to `false`.
+- `options` (Block List) Additional options for the variable, such as a MFA token. (see [below for nested schema](#nestedblock--options))
+- `parse_test_id` (String) Id of the Synthetics test to use for a variable from test.
+- `parse_test_options` (Block List) ID of the Synthetics test to use a source of the global variable value. (see [below for nested schema](#nestedblock--parse_test_options))
+- `restricted_roles` (Set of String, Deprecated) A list of role identifiers to associate with the Synthetics global variable. **Deprecated.** This field is no longer supported by the Datadog API. Please use `datadog_restriction_policy` instead.
+- `secure` (Boolean) If set to true, the value of the global variable is hidden. This setting is automatically set to `true` if `is_totp` or `is_fido` is set to `true`. Defaults to `false`.
+- `tags` (List of String) A list of tags to associate with your synthetics global variable.
+- `value` (String, Sensitive) The value of the global variable. Required unless `is_fido` is set to `true` or `value_wo` is used
+- `value_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Write-only value of the global variable. Must be used with `value_wo_version`.
+- `value_wo_version` (String) Version associated with the write-only value. Changing this triggers an update. Can be any string (e.g., '1', 'v2.1', '2024-Q1'). String length must be at least 1.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
+
+<a id="nestedblock--options"></a>
+### Nested Schema for `options`
+
+Optional:
+
+- `totp_parameters` (Block List) Parameters needed for MFA/TOTP. (see [below for nested schema](#nestedblock--options--totp_parameters))
+
+<a id="nestedblock--options--totp_parameters"></a>
+### Nested Schema for `options.totp_parameters`
+
+Required:
+
+- `digits` (Number) Number of digits for the OTP. Value must be between 4 and 10.
+- `refresh_interval` (Number) Interval for which to refresh the token (in seconds). Value must be between 0 and 999.
+
+
 
 <a id="nestedblock--parse_test_options"></a>
 ### Nested Schema for `parse_test_options`
 
 Required:
 
-- **parser** (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--parse_test_options--parser))
-- **type** (String) Defines the source to use to extract the value. Valid values are `http_body`, `http_header`.
+- `type` (String) Defines the source to use to extract the value. Valid values are `http_body`, `http_header`, `http_status_code`, `local_variable`.
 
 Optional:
 
-- **field** (String) Required when type = `http_header`. Defines the header to use to extract the value
+- `field` (String) Required when type = `http_header`. Defines the header to use to extract the value
+- `local_variable_name` (String) When type is `local_variable`, name of the local variable to use to extract the value.
+- `parser` (Block List) (see [below for nested schema](#nestedblock--parse_test_options--parser))
 
 <a id="nestedblock--parse_test_options--parser"></a>
 ### Nested Schema for `parse_test_options.parser`
 
 Required:
 
-- **type** (String) Type of parser to extract the value. Valid values are `raw`, `json_path`, `regex`, `x_path`.
+- `type` (String) Type of parser to extract the value. Valid values are `raw`, `json_path`, `regex`, `x_path`.
 
 Optional:
 
-- **value** (String) Value for the parser to use, required for type `json_path` or `regex`.
+- `value` (String) Value for the parser to use, required for type `json_path` or `regex`.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 # Synthetics global variables can be imported using their string ID, e.g.

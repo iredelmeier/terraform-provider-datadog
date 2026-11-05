@@ -14,16 +14,16 @@ Provides a Datadog role resource. This can be used to create and manage Datadog 
 
 ```terraform
 # Source the permissions
-data "datadog_permissions" "bar" {}
+data "datadog_permissions" "dd_perms" {}
 
-# Create a new Datadog role
-resource "datadog_role" "foo" {
-  name = "foo"
+# Create an API Key Manager role
+resource "datadog_role" "api_key_manager" {
+  name = "API Key Manager"
   permission {
-    id = data.datadog_permissions.bar.permissions.monitors_downtime
+    id = data.datadog_permissions.dd_perms.permissions.api_keys_read
   }
   permission {
-    id = data.datadog_permissions.bar.permissions.monitors_write
+    id = data.datadog_permissions.dd_perms.permissions.api_keys_write
   }
 }
 ```
@@ -33,31 +33,35 @@ resource "datadog_role" "foo" {
 
 ### Required
 
-- **name** (String) Name of the role.
+- `name` (String) Name of the role.
 
 ### Optional
 
-- **permission** (Block Set) Set of objects containing the permission ID and the name of the permissions granted to this role. (see [below for nested schema](#nestedblock--permission))
+- `default_permissions_opt_out` (Boolean) If set to `true`, the role does not have default (restricted) permissions unless they are explicitly set. The `include_restricted` attribute for the `datadog_permissions` data source must be set to `true` to manage default permissions in Terraform.
+- `permission` (Block Set) Set of objects containing the permission ID and the name of the permissions granted to this role. (see [below for nested schema](#nestedblock--permission))
+- `validate` (Boolean) If set to `false`, skip the validation call done during plan.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
-- **user_count** (Number) Number of users that have this role.
+- `id` (String) The ID of this resource.
+- `user_count` (Number, Deprecated) Number of users that have this role. **Deprecated.** This field is no longer set and will be removed in a future release.
 
 <a id="nestedblock--permission"></a>
 ### Nested Schema for `permission`
 
 Required:
 
-- **id** (String) ID of the permission to assign.
+- `id` (String) ID of the permission to assign.
 
 Read-Only:
 
-- **name** (String) Name of the permission.
+- `name` (String) Name of the permission.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 # Roles can be imported using their ID, e.g.

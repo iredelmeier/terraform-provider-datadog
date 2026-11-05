@@ -1,0 +1,36 @@
+openapi: 3.0.0
+info:
+  title: tracking duplicate fixture
+  version: 1.0.0
+paths:
+  /teams:
+    get:
+      operationId: ListTeams
+      responses:
+        '200':
+          description: ok
+  /teams/{id}:
+    get:
+      operationId: GetTeam
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ok
+tags:
+- name: Terraform
+  x-datadog-tf-generator:
+    team:
+      datasource_singular:
+        artifact_name: team
+        group:
+          read: ListTeams
+    team_duplicate:
+      datasource_singular:
+        artifact_name: team
+        group:
+          read: GetTeam

@@ -6,7 +6,7 @@ import (
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/validators"
 
-	datadogV1 "github.com/DataDog/datadog-api-client-go/api/v1/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -21,49 +21,59 @@ func resourceDatadogSloCorrection() *schema.Resource {
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
-		Schema: map[string]*schema.Schema{
-			"category": {
-				Type:             schema.TypeString,
-				ValidateDiagFunc: validators.ValidateEnumValue(datadogV1.NewSLOCorrectionCategoryFromValue),
-				Required:         true,
-				Description:      "Category the SLO correction belongs to.",
-			},
-			"description": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "Description of the correction being made.",
-			},
-			"end": {
-				Type:          schema.TypeInt,
-				Optional:      true,
-				ConflictsWith: []string{"rrule", "duration"},
-				Description:   "Ending time of the correction in epoch seconds. Required for one time corrections, but optional if `rrule` is specified",
-			},
-			"slo_id": {
-				Type:        schema.TypeString,
-				Required:    true,
-				Description: "ID of the SLO that this correction will be applied to.",
-			},
-			"start": {
-				Type:        schema.TypeInt,
-				Required:    true,
-				Description: "Starting time of the correction in epoch seconds.",
-			},
-			"timezone": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "The timezone to display in the UI for the correction times (defaults to \"UTC\")",
-			},
-			"duration": {
-				Type:        schema.TypeInt,
-				Optional:    true,
-				Description: "Length of time in seconds for a specified `rrule` recurring SLO correction (required if specifying `rrule`)",
-			},
-			"rrule": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "Recurrence rules as defined in the iCalendar RFC 5545. Supported rules for SLO corrections are `FREQ`, `INTERVAL`, `COUNT` and `UNTIL`.",
-			},
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"category": {
+					Type:             schema.TypeString,
+					ValidateDiagFunc: validators.ValidateEnumValue(datadogV1.NewSLOCorrectionCategoryFromValue),
+					Required:         true,
+					Description:      "Category the SLO correction belongs to.",
+				},
+				"description": {
+					Type:        schema.TypeString,
+					Optional:    true,
+					Description: "Description of the correction being made.",
+				},
+				"end": {
+					Type:          schema.TypeInt,
+					Optional:      true,
+					ConflictsWith: []string{"rrule", "duration"},
+					Description:   "Ending time of the correction in epoch seconds. Required for one time corrections, but optional if `rrule` is specified",
+				},
+				"slo_id": {
+					Type:         schema.TypeString,
+					Optional:     true,
+					ForceNew:     true,
+					ExactlyOneOf: []string{"slo_id", "slo_query"},
+					Description:  "ID of the single SLO that this correction will be applied to.",
+				},
+				"slo_query": {
+					Type:         schema.TypeString,
+					Optional:     true,
+					ExactlyOneOf: []string{"slo_id", "slo_query"},
+					Description:  "Query that matches the SLOs this correction will be applied to.",
+				},
+				"start": {
+					Type:        schema.TypeInt,
+					Required:    true,
+					Description: "Starting time of the correction in epoch seconds.",
+				},
+				"timezone": {
+					Type:        schema.TypeString,
+					Optional:    true,
+					Description: "The timezone to display in the UI for the correction times. Prefers IANA timezone name format (for example, 'America/Los_Angeles', 'Europe/Paris'), but some common standard abbreviations are supported. Defaults to 'UTC'.",
+				},
+				"duration": {
+					Type:        schema.TypeInt,
+					Optional:    true,
+					Description: "Length of time in seconds for a specified `rrule` recurring SLO correction (required if specifying `rrule`)",
+				},
+				"rrule": {
+					Type:        schema.TypeString,
+					Optional:    true,
+					Description: "Recurrence rules as defined in the iCalendar RFC 5545. Supported rules for SLO corrections are `FREQ`, `INTERVAL`, `COUNT` and `UNTIL`.",
+				},
+			}
 		},
 	}
 }
@@ -82,7 +92,12 @@ func buildDatadogSloCorrection(d *schema.ResourceData) *datadogV1.SLOCorrectionC
 		attributes.SetEnd(int64(end.(int)))
 	}
 
-	attributes.SetSloId(d.Get("slo_id").(string))
+	if sloID, ok := d.GetOk("slo_id"); ok {
+		attributes.SetSloId(sloID.(string))
+	}
+	if sloQuery, ok := d.GetOk("slo_query"); ok {
+		attributes.SetSloQuery(sloQuery.(string))
+	}
 
 	if timezone, ok := d.GetOk("timezone"); ok {
 		attributes.SetTimezone(timezone.(string))
@@ -124,6 +139,9 @@ func buildDatadogSloCorrectionUpdate(d *schema.ResourceData) *datadogV1.SLOCorre
 	if rrule, ok := d.GetOk("rrule"); ok {
 		attributes.SetRrule(rrule.(string))
 	}
+	if sloQuery, ok := d.GetOk("slo_query"); ok {
+		attributes.SetSloQuery(sloQuery.(string))
+	}
 	if duration, ok := d.GetOk("duration"); ok {
 		attributes.SetDuration(int64(duration.(int)))
 	}
@@ -134,12 +152,12 @@ func buildDatadogSloCorrectionUpdate(d *schema.ResourceData) *datadogV1.SLOCorre
 
 func resourceDatadogSloCorrectionCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV1
-	auth := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	ddObject := buildDatadogSloCorrection(d)
 
-	response, httpResponse, err := datadogClient.ServiceLevelObjectiveCorrectionsApi.CreateSLOCorrection(auth, *ddObject)
+	response, httpResponse, err := apiInstances.GetServiceLevelObjectiveCorrectionsApiV1().CreateSLOCorrection(auth, *ddObject)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error creating SloCorrection")
 	}
@@ -164,8 +182,13 @@ func updateSLOCorrectionState(d *schema.ResourceData, sloCorrectionData *datadog
 				return diag.FromErr(err)
 			}
 		}
-		if sloID, ok := sloCorrectionAttributes.GetSloIdOk(); ok {
+		if sloID, ok := sloCorrectionAttributes.GetSloIdOk(); ok && sloID != nil {
 			if err := d.Set("slo_id", *sloID); err != nil {
+				return diag.FromErr(err)
+			}
+		}
+		if sloQuery, ok := sloCorrectionAttributes.GetSloQueryOk(); ok && sloQuery != nil {
+			if err := d.Set("slo_query", *sloQuery); err != nil {
 				return diag.FromErr(err)
 			}
 		}
@@ -179,7 +202,7 @@ func updateSLOCorrectionState(d *schema.ResourceData, sloCorrectionData *datadog
 				return diag.FromErr(err)
 			}
 		}
-		if end, ok := sloCorrectionAttributes.GetEndOk(); ok {
+		if end, ok := sloCorrectionAttributes.GetEndOk(); ok && end != nil {
 			if err := d.Set("end", *end); err != nil {
 				return diag.FromErr(err)
 			}
@@ -213,13 +236,13 @@ func updateSLOCorrectionState(d *schema.ResourceData, sloCorrectionData *datadog
 
 func resourceDatadogSloCorrectionRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV1
-	auth := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 	var err error
 
 	id := d.Id()
 
-	sloCorrectionGetResp, httpResponse, err := datadogClient.ServiceLevelObjectiveCorrectionsApi.GetSLOCorrection(auth, id)
+	sloCorrectionGetResp, httpResponse, err := apiInstances.GetServiceLevelObjectiveCorrectionsApiV1().GetSLOCorrection(auth, id)
 	if err != nil {
 		if httpResponse != nil && httpResponse.StatusCode == 404 {
 			// this condition takes on the job of the deprecated Exists handlers
@@ -236,13 +259,13 @@ func resourceDatadogSloCorrectionRead(ctx context.Context, d *schema.ResourceDat
 
 func resourceDatadogSloCorrectionUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV1
-	auth := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	ddObject := buildDatadogSloCorrectionUpdate(d)
 	id := d.Id()
 
-	response, httpResponse, err := datadogClient.ServiceLevelObjectiveCorrectionsApi.UpdateSLOCorrection(auth, id, *ddObject)
+	response, httpResponse, err := apiInstances.GetServiceLevelObjectiveCorrectionsApiV1().UpdateSLOCorrection(auth, id, *ddObject)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error creating SloCorrection")
 	}
@@ -255,13 +278,13 @@ func resourceDatadogSloCorrectionUpdate(ctx context.Context, d *schema.ResourceD
 
 func resourceDatadogSloCorrectionDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClient := providerConf.DatadogClientV1
-	auth := providerConf.AuthV1
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 	var err error
 
 	id := d.Id()
 
-	httpResponse, err := datadogClient.ServiceLevelObjectiveCorrectionsApi.DeleteSLOCorrection(auth, id)
+	httpResponse, err := apiInstances.GetServiceLevelObjectiveCorrectionsApiV1().DeleteSLOCorrection(auth, id)
 
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error deleting SloCorrection")

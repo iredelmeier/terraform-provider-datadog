@@ -7,57 +7,66 @@ import (
 	"strings"
 	"testing"
 
-	datadogV2 "github.com/DataDog/datadog-api-client-go/api/v2/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
-	"github.com/terraform-providers/terraform-provider-datadog/datadog"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/fwprovider"
 )
 
 const tfSecurityRulesSource = "data.datadog_security_monitoring_rules.acceptance_test"
 
-func TestAccDatadogSecurityMonitoringRuleDatasource(t *testing.T) {
-	ctx, accProviders := testAccProviders(context.Background(), t)
-	ruleName := uniqueEntityName(ctx, t)
-	accProvider := testAccProvider(t, accProviders)
+var allRules *[]datadogV2.SecurityMonitoringRuleResponse
 
+func TestAccDatadogSecurityMonitoringRuleDatasource(t *testing.T) {
+	t.Parallel()
+	if isRecording() || isReplaying() {
+		// Cassette is >100MB, too large for Github
+		t.Skip("This test doesn't support recording or replaying")
+	}
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+	ruleName := uniqueEntityName(ctx, t)
+	accProvider := providers.frameworkProvider
+
+	securityMonitoringCreatedConfig := testAccCheckDatadogSecurityMonitoringCreatedConfig(ruleName)
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: accProviders,
-		CheckDestroy:      testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogSecurityMonitoringRuleDestroy(accProvider),
 		Steps: []resource.TestStep{
 			{
 				// Create a rule to make sure we have at least one non-default rule
 				Config: testAccCheckDatadogSecurityMonitoringCreatedConfig(ruleName),
 			},
+			// Disable the test for now as the result is too huge
+			//{
+			//	Config: testAccDataSourceSecurityMonitoringRuleNoFilter(securityMonitoringCreatedConfig),
+			//	Check: resource.ComposeTestCheckFunc(
+			//		securityMonitoringCheckRuleCountNoFilter(accProvider),
+			//	),
+			//},
 			{
-				Config: testAccDataSourceSecurityMonitoringRuleNoFilter(ruleName),
-				Check: resource.ComposeTestCheckFunc(
-					securityMonitoringCheckRuleCountNoFilter(accProvider),
-				),
-			},
-			{
-				Config: testAccDataSourceSecurityMonitoringRuleNameFilter(ruleName),
+				Config: testAccDataSourceSecurityMonitoringRuleNameFilter(securityMonitoringCreatedConfig, ruleName),
 				Check: resource.ComposeTestCheckFunc(
 					securityMonitoringCheckRuleCountNameFilter(accProvider, ruleName),
 				),
 			},
 			{
-				Config: testAccDataSourceSecurityMonitoringRuleTagsFilter(ruleName),
+				Config: testAccDataSourceSecurityMonitoringRuleTagsFilter(securityMonitoringCreatedConfig),
 				Check: resource.ComposeTestCheckFunc(
 					securityMonitoringCheckRuleCountTagsFilter(accProvider, "i:tomato"),
 				),
 			},
+			// Disable the test for now as the result is too huge
+			//{
+			//	Config: testAccDataSourceSecurityMonitoringRuleDefaultFilter(ruleName),
+			//	Check: resource.ComposeTestCheckFunc(
+			//		securityMonitoringCheckRuleCountDefaultFilter(accProvider, true),
+			//	),
+			//},
 			{
-				Config: testAccDataSourceSecurityMonitoringRuleDefaultFilter(ruleName),
-				Check: resource.ComposeTestCheckFunc(
-					securityMonitoringCheckRuleCountDefaultFilter(accProvider, true),
-				),
-			},
-			{
-				Config: testAccDataSourceSecurityMonitoringRuleUserFilter(ruleName),
+				Config: testAccDataSourceSecurityMonitoringRuleUserFilter(securityMonitoringCreatedConfig),
 				Check: resource.ComposeTestCheckFunc(
 					securityMonitoringCheckRuleCountDefaultFilter(accProvider, false),
 				),
@@ -66,41 +75,47 @@ func TestAccDatadogSecurityMonitoringRuleDatasource(t *testing.T) {
 	})
 }
 
-func securityMonitoringCheckRuleCountNoFilter(accProvider func() (*schema.Provider, error)) func(state *terraform.State) error {
+//func securityMonitoringCheckRuleCountNoFilter(accProvider func() (*schema.Provider, error)) func(state *terraform.State) error {
+//	return func(state *terraform.State) error {
+//		provider, _ := accProvider()
+//		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
+//		auth := providerConf.Auth
+//		apiInstances := providerConf.DatadogApiInstances
+//
+//		rulesResponse, _, err := apiInstances.GetSecurityMonitoringApiV2().ListSecurityMonitoringRules(auth,
+//			*datadogV2.NewListSecurityMonitoringRulesOptionalParameters().
+//				WithPageNumber(0).
+//				WithPageSize(1000))
+//		if err != nil {
+//			return err
+//		}
+//		return securityMonitoringCheckRuleCount(state, len(rulesResponse.Data))
+//	}
+//}
+
+func securityMonitoringCheckRuleCountNameFilter(accProvider *fwprovider.FrameworkProvider, name string) resource.TestCheckFunc {
 	return func(state *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		authV2 := providerConf.AuthV2
-		client := providerConf.DatadogClientV2
-
-		rulesResponse, _, err := client.SecurityMonitoringApi.ListSecurityMonitoringRules(authV2,
-			*datadogV2.NewListSecurityMonitoringRulesOptionalParameters().
-				WithPageNumber(0).
-				WithPageSize(1000))
-		if err != nil {
-			return err
-		}
-		return securityMonitoringCheckRuleCount(state, len(*rulesResponse.Data))
-	}
-}
-
-func securityMonitoringCheckRuleCountNameFilter(accProvider func() (*schema.Provider, error), name string) resource.TestCheckFunc {
-	return func(state *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		authV2 := providerConf.AuthV2
-		client := providerConf.DatadogClientV2
-
-		rulesResponse, _, err := client.SecurityMonitoringApi.ListSecurityMonitoringRules(authV2,
-			*datadogV2.NewListSecurityMonitoringRulesOptionalParameters().WithPageSize(1000))
-		if err != nil {
-			return err
+		if allRules == nil {
+			err := getAllSecurityMonitoringRules(accProvider)
+			if err != nil {
+				return err
+			}
 		}
 
 		ruleCount := 0
-		for _, rule := range *rulesResponse.Data {
-			if strings.Contains(rule.GetName(), name) {
-				ruleCount++
+		for _, rule := range *allRules {
+			if rule.GetActualInstance() == nil {
+				continue
+			}
+
+			if rule.SecurityMonitoringStandardRuleResponse != nil {
+				if strings.Contains(rule.SecurityMonitoringStandardRuleResponse.GetName(), name) {
+					ruleCount++
+				}
+			} else {
+				if strings.Contains(rule.SecurityMonitoringSignalRuleResponse.GetName(), name) {
+					ruleCount++
+				}
 			}
 		}
 
@@ -108,21 +123,28 @@ func securityMonitoringCheckRuleCountNameFilter(accProvider func() (*schema.Prov
 	}
 }
 
-func securityMonitoringCheckRuleCountTagsFilter(accProvider func() (*schema.Provider, error), filterTag string) resource.TestCheckFunc {
+func securityMonitoringCheckRuleCountTagsFilter(accProvider *fwprovider.FrameworkProvider, filterTag string) resource.TestCheckFunc {
 	return func(state *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		authV2 := providerConf.AuthV2
-		client := providerConf.DatadogClientV2
-		rulesResponse, _, err := client.SecurityMonitoringApi.ListSecurityMonitoringRules(authV2,
-			*datadogV2.NewListSecurityMonitoringRulesOptionalParameters().WithPageSize(1000))
-		if err != nil {
-			return err
+		if allRules == nil {
+			err := getAllSecurityMonitoringRules(accProvider)
+			if err != nil {
+				return err
+			}
 		}
 
 		ruleCount := 0
-		for _, rule := range *rulesResponse.Data {
-			for _, tag := range rule.GetTags() {
+		for _, rule := range *allRules {
+			if rule.GetActualInstance() == nil {
+				continue
+			}
+
+			var tags []string
+			if rule.SecurityMonitoringStandardRuleResponse != nil {
+				tags = rule.SecurityMonitoringStandardRuleResponse.GetTags()
+			} else {
+				tags = rule.SecurityMonitoringSignalRuleResponse.GetTags()
+			}
+			for _, tag := range tags {
 				if strings.Contains(tag, filterTag) {
 					ruleCount++
 				}
@@ -132,22 +154,29 @@ func securityMonitoringCheckRuleCountTagsFilter(accProvider func() (*schema.Prov
 	}
 }
 
-func securityMonitoringCheckRuleCountDefaultFilter(accProvider func() (*schema.Provider, error), isDefault bool) resource.TestCheckFunc {
+func securityMonitoringCheckRuleCountDefaultFilter(accProvider *fwprovider.FrameworkProvider, isDefault bool) resource.TestCheckFunc {
 	return func(state *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		authV2 := providerConf.AuthV2
-		client := providerConf.DatadogClientV2
-		rulesResponse, _, err := client.SecurityMonitoringApi.ListSecurityMonitoringRules(authV2,
-			*datadogV2.NewListSecurityMonitoringRulesOptionalParameters().WithPageSize(1000))
-		if err != nil {
-			return err
+		if allRules == nil {
+			err := getAllSecurityMonitoringRules(accProvider)
+			if err != nil {
+				return err
+			}
 		}
 
 		ruleCount := 0
-		for _, rule := range *rulesResponse.Data {
-			if rule.GetIsDefault() == isDefault {
-				ruleCount++
+		for _, rule := range *allRules {
+			if rule.GetActualInstance() == nil {
+				continue
+			}
+
+			if rule.SecurityMonitoringStandardRuleResponse != nil {
+				if rule.SecurityMonitoringStandardRuleResponse.GetIsDefault() == isDefault {
+					ruleCount++
+				}
+			} else {
+				if rule.SecurityMonitoringSignalRuleResponse.GetIsDefault() == isDefault {
+					ruleCount++
+				}
 			}
 		}
 		return securityMonitoringCheckRuleCount(state, ruleCount)
@@ -167,38 +196,65 @@ func securityMonitoringCheckRuleCount(state *terraform.State, responseRuleCount 
 	return nil
 }
 
-func testAccDataSourceSecurityMonitoringRuleNoFilter(ruleName string) string {
-	return testAccCheckDatadogSecurityMonitoringCreatedConfig(ruleName) + `
-data "datadog_security_monitoring_rules" "acceptance_test" {
-}
-`
+//func testAccDataSourceSecurityMonitoringRuleNoFilter(existingRuleConfig string) string {
+//	return existingRuleConfig + `
+//data "datadog_security_monitoring_rules" "acceptance_test" {
+//}
+//`
+//}
+
+func getAllSecurityMonitoringRules(accProvider *fwprovider.FrameworkProvider) error {
+	auth := accProvider.Auth
+	apiInstances := accProvider.DatadogApiInstances
+
+	pageSize := int64(1000)
+	pageNumber := int64(0)
+	remaining := int64(1)
+
+	var rules []datadogV2.SecurityMonitoringRuleResponse
+	for remaining > int64(0) {
+		rulesResponse, _, err := apiInstances.GetSecurityMonitoringApiV2().ListSecurityMonitoringRules(auth,
+			*datadogV2.NewListSecurityMonitoringRulesOptionalParameters().WithPageSize(pageSize).WithPageNumber(pageNumber))
+		if err != nil {
+			return err
+		}
+
+		rules = append(rules, rulesResponse.GetData()...)
+
+		remaining = rulesResponse.Meta.Page.GetTotalCount() - pageSize*(pageNumber+1)
+		pageNumber++
+	}
+
+	allRules = &rules
+	return nil
 }
 
-func testAccDataSourceSecurityMonitoringRuleNameFilter(ruleName string) string {
-	return testAccCheckDatadogSecurityMonitoringCreatedConfig(ruleName) + fmt.Sprintf(`
+func testAccDataSourceSecurityMonitoringRuleNameFilter(existingRuleConfig, ruleName string) string {
+	return existingRuleConfig + fmt.Sprintf(`
 data "datadog_security_monitoring_rules" "acceptance_test" {
     name_filter = "%s"
 }
 `, ruleName)
 }
 
-func testAccDataSourceSecurityMonitoringRuleTagsFilter(ruleName string) string {
-	return testAccCheckDatadogSecurityMonitoringCreatedConfig(ruleName) + `
+func testAccDataSourceSecurityMonitoringRuleTagsFilter(existingRuleConfig string) string {
+	return existingRuleConfig + `
 data "datadog_security_monitoring_rules" "acceptance_test" {
     tags_filter = ["i:tomato"]
 }
 `
 }
-func testAccDataSourceSecurityMonitoringRuleDefaultFilter(ruleName string) string {
-	return testAccCheckDatadogSecurityMonitoringCreatedConfig(ruleName) + `
-data "datadog_security_monitoring_rules" "acceptance_test" {
-	default_only_filter = true
-}
-`
-}
 
-func testAccDataSourceSecurityMonitoringRuleUserFilter(ruleName string) string {
-	return testAccCheckDatadogSecurityMonitoringCreatedConfig(ruleName) + `
+//func testAccDataSourceSecurityMonitoringRuleDefaultFilter(ruleName string) string {
+//	return testAccCheckDatadogSecurityMonitoringCreatedConfig(ruleName) + `
+//data "datadog_security_monitoring_rules" "acceptance_test" {
+//	default_only_filter = true
+//}
+//`
+//}
+
+func testAccDataSourceSecurityMonitoringRuleUserFilter(existingRuleConfig string) string {
+	return existingRuleConfig + `
 data "datadog_security_monitoring_rules" "acceptance_test" {
 	user_only_filter = true
 }

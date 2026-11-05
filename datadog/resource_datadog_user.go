@@ -6,7 +6,7 @@ import (
 
 	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 
-	datadogV2 "github.com/DataDog/datadog-api-client-go/api/v2/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -22,49 +22,53 @@ func resourceDatadogUser() *schema.Resource {
 			StateContext: schema.ImportStatePassthroughContext,
 		},
 
-		Schema: map[string]*schema.Schema{
-			"disabled": {
-				Description: "Whether the user is disabled.",
-				Type:        schema.TypeBool,
-				Optional:    true,
-				Default:     false,
-			},
-			"email": {
-				Description: "Email address for user.",
-				Type:        schema.TypeString,
-				Required:    true,
-			},
-			"name": {
-				Description: "Name for user.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
-			"roles": {
-				Description: "A list a role IDs to assign to the user.",
-				Type:        schema.TypeSet,
-				Optional:    true,
-				Elem:        &schema.Schema{Type: schema.TypeString},
-			},
-			"send_user_invitation": {
-				Description: "Whether an invitation email should be sent when the user is created.",
-				Type:        schema.TypeBool,
-				Optional:    true,
-				Default:     true,
-				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					// This is only used on create, so don't generate diff when the resource already exists
-					return d.Id() != ""
+		SchemaFunc: func() map[string]*schema.Schema {
+			return map[string]*schema.Schema{
+				"disabled": {
+					Description: "Whether the user is disabled.",
+					Type:        schema.TypeBool,
+					Optional:    true,
+					Default:     false,
 				},
-			},
-			"verified": {
-				Description: "Returns `true` if the user is verified.",
-				Type:        schema.TypeBool,
-				Computed:    true,
-			},
-			"user_invitation_id": {
-				Description: "The ID of the user invitation that was sent when creating the user.",
-				Type:        schema.TypeString,
-				Computed:    true,
-			},
+				"email": {
+					Description: "Email address for user.",
+					Type:        schema.TypeString,
+					Required:    true,
+				},
+				"name": {
+					Description: "User's name. Should be set only for password authentication, as it is overridden by Google or SAML authentication.",
+					Type:        schema.TypeString,
+					Optional:    true,
+					Computed:    true,
+				},
+				"roles": {
+					Description: "A list of role IDs to assign to the user.",
+					Type:        schema.TypeSet,
+					Optional:    true,
+					Computed:    true,
+					Elem:        &schema.Schema{Type: schema.TypeString},
+				},
+				"send_user_invitation": {
+					Description: "Whether an invitation email should be sent when the user is created.",
+					Type:        schema.TypeBool,
+					Optional:    true,
+					Default:     true,
+					DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+						// This is only used on create, so don't generate diff when the resource already exists
+						return d.Id() != ""
+					},
+				},
+				"verified": {
+					Description: "Returns `true` if the user is verified.",
+					Type:        schema.TypeBool,
+					Computed:    true,
+				},
+				"user_invitation_id": {
+					Description: "The ID of the user invitation that was sent when creating the user.",
+					Type:        schema.TypeString,
+					Computed:    true,
+				},
+			}
 		},
 	}
 }
@@ -100,6 +104,7 @@ func buildDatadogUserV2Struct(d *schema.ResourceData) *datadogV2.UserCreateReque
 	return userRequest
 }
 
+// Note: when migrating to Framework, use buildDatadogUserV2UpdateStructFw from datadog/resource_datadog_service_account.go
 func buildDatadogUserV2UpdateStruct(d *schema.ResourceData, userID string) *datadogV2.UserUpdateRequest {
 	userAttributes := datadogV2.NewUserUpdateAttributesWithDefaults()
 	userAttributes.SetEmail(d.Get("email").(string))
@@ -118,34 +123,35 @@ func buildDatadogUserV2UpdateStruct(d *schema.ResourceData, userID string) *data
 	return userRequest
 }
 
+// Note: when migrating to Framework, use updateRolesFw from datadog/resource_datadog_service_account.go
 func updateRoles(meta interface{}, userID string, oldRoles *schema.Set, newRoles *schema.Set) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV2 := providerConf.DatadogClientV2
-	authV2 := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	rolesToRemove := oldRoles.Difference(newRoles)
 	rolesToAdd := newRoles.Difference(oldRoles)
 
-	for _, roleI := range rolesToRemove.List() {
-		role := roleI.(string)
-		userRelation := datadogV2.NewRelationshipToUserWithDefaults()
-		userRelationData := datadogV2.NewRelationshipToUserDataWithDefaults()
-		userRelationData.SetId(userID)
-		userRelation.SetData(*userRelationData)
-		_, httpResponse, err := datadogClientV2.RolesApi.RemoveUserFromRole(authV2, role, *userRelation)
-		if err != nil {
-			return utils.TranslateClientErrorDiag(err, httpResponse, "error removing user from role")
-		}
-	}
 	for _, roleI := range rolesToAdd.List() {
 		role := roleI.(string)
 		roleRelation := datadogV2.NewRelationshipToUserWithDefaults()
 		roleRelationData := datadogV2.NewRelationshipToUserDataWithDefaults()
 		roleRelationData.SetId(userID)
 		roleRelation.SetData(*roleRelationData)
-		_, httpResponse, err := datadogClientV2.RolesApi.AddUserToRole(authV2, role, *roleRelation)
+		_, httpResponse, err := apiInstances.GetRolesApiV2().AddUserToRole(auth, role, *roleRelation)
 		if err != nil {
 			return utils.TranslateClientErrorDiag(err, httpResponse, "error adding user to role")
+		}
+	}
+	for _, roleI := range rolesToRemove.List() {
+		role := roleI.(string)
+		userRelation := datadogV2.NewRelationshipToUserWithDefaults()
+		userRelationData := datadogV2.NewRelationshipToUserDataWithDefaults()
+		userRelationData.SetId(userID)
+		userRelation.SetData(*userRelationData)
+		_, httpResponse, err := apiInstances.GetRolesApiV2().RemoveUserFromRole(auth, role, *userRelation)
+		if err != nil {
+			return utils.TranslateClientErrorDiag(err, httpResponse, "error removing user from role")
 		}
 	}
 
@@ -154,8 +160,8 @@ func updateRoles(meta interface{}, userID string, oldRoles *schema.Set, newRoles
 
 func resourceDatadogUserCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV2 := providerConf.DatadogClientV2
-	authV2 := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	userRequest := buildDatadogUserV2Struct(d)
 	var userID string
@@ -163,30 +169,66 @@ func resourceDatadogUserCreate(ctx context.Context, d *schema.ResourceData, meta
 
 	// Datadog does not actually delete users, so CreateUser might return a 409.
 	// We ignore that case and proceed, likely re-enabling the user.
-	createResponse, httpresp, err := datadogClientV2.UsersApi.CreateUser(authV2, *userRequest)
+	createResponse, httpresp, err := apiInstances.GetUsersApiV2().CreateUser(auth, *userRequest)
 	if err != nil {
 		if httpresp == nil || httpresp.StatusCode != 409 {
 			return utils.TranslateClientErrorDiag(err, httpresp, "error creating user")
 		}
 		email := d.Get("email").(string)
 		log.Printf("[INFO] Updating existing Datadog user %s", email)
+
+		var existingUser *datadogV2.User
 		// Find user ID by listing user and filtering by email
-		listResponse, _, err := datadogClientV2.UsersApi.ListUsers(authV2,
+		listResponse, httpResp, err := apiInstances.GetUsersApiV2().ListUsers(auth,
 			*datadogV2.NewListUsersOptionalParameters().WithFilter(email))
 		if err != nil {
-			return utils.TranslateClientErrorDiag(err, httpresp, "error searching user")
+			return utils.TranslateClientErrorDiag(err, httpResp, "error searching user")
 		}
 		if err := utils.CheckForUnparsed(listResponse); err != nil {
 			return diag.FromErr(err)
 		}
 		responseData := listResponse.GetData()
-		if len(responseData) != 1 {
-			return diag.Errorf("could not find single user with email %s", email)
+		if len(responseData) == 1 {
+			existingUser = &responseData[0]
 		}
-		userID = responseData[0].GetId()
+		if len(responseData) > 1 {
+			for _, user := range responseData {
+				if user.Attributes.GetEmail() == email {
+					existingUser = &user
+					break
+				}
+			}
+			if existingUser == nil {
+				return diag.Errorf("could not find single user with email %s", email)
+			}
+		}
+		if existingUser == nil {
+			// We already raised an exception if multiple users were found but no exact email match.
+			// If user is nil at this stage, we can assume a user with the same handle already exists.
+			// Find the user and raise a helpful error message.
+			var existingUserWithHandle *datadogV2.User
+			resp, _ := apiInstances.GetUsersApiV2().ListUsersWithPagination(auth, *datadogV2.NewListUsersOptionalParameters().WithPageSize(500))
+			for paginationResult := range resp {
+				if paginationResult.Error != nil {
+					return diag.Errorf("error listing users: %s", paginationResult.Error)
+				}
+				if paginationResult.Item.Attributes.GetHandle() == email {
+					existingUserWithHandle = &paginationResult.Item
+					break
+				}
+			}
+			if existingUserWithHandle != nil {
+				return diag.Errorf("user with id %q already exists with handle %q", existingUserWithHandle.GetId(), email)
+			}
+
+			// Catch all error
+			return diag.Errorf("error retrieving user with email/handle %s", email)
+		}
+
+		userID = existingUser.GetId()
 		userRequest := buildDatadogUserV2UpdateStruct(d, userID)
 
-		updatedUser, _, err := datadogClientV2.UsersApi.UpdateUser(authV2, userID, *userRequest)
+		updatedUser, _, err := apiInstances.GetUsersApiV2().UpdateUser(auth, userID, *userRequest)
 		if err != nil {
 			return utils.TranslateClientErrorDiag(err, httpresp, "error updating user")
 		}
@@ -234,8 +276,8 @@ func resourceDatadogUserCreate(ctx context.Context, d *schema.ResourceData, meta
 
 func sendUserInvitation(userID string, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV2 := providerConf.DatadogClientV2
-	authV2 := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	userInviteRelationData := datadogV2.NewRelationshipToUserDataWithDefaults()
 	userInviteRelationData.SetId(userID)
@@ -249,7 +291,7 @@ func sendUserInvitation(userID string, d *schema.ResourceData, meta interface{})
 	body := *datadogV2.NewUserInvitationsRequestWithDefaults()
 	body.SetData(userInvite)
 
-	res, httpResponse, err := datadogClientV2.UsersApi.SendInvitations(authV2, body)
+	res, httpResponse, err := apiInstances.GetUsersApiV2().SendInvitations(auth, body)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error sending user invitation")
 	}
@@ -292,10 +334,10 @@ func updateUserStateV2(d *schema.ResourceData, user *datadogV2.UserResponse) dia
 }
 func resourceDatadogUserRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV2 := providerConf.DatadogClientV2
-	authV2 := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
-	userResponse, httpResponse, err := datadogClientV2.UsersApi.GetUser(authV2, d.Id())
+	userResponse, httpResponse, err := apiInstances.GetUsersApiV2().GetUser(auth, d.Id())
 	if err != nil {
 		if httpResponse != nil && httpResponse.StatusCode == 404 {
 			d.SetId("")
@@ -311,8 +353,8 @@ func resourceDatadogUserRead(ctx context.Context, d *schema.ResourceData, meta i
 
 func resourceDatadogUserUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV2 := providerConf.DatadogClientV2
-	authV2 := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
 	if d.HasChange("roles") {
 		oldRolesI, newRolesI := d.GetChange("roles")
@@ -325,7 +367,7 @@ func resourceDatadogUserUpdate(ctx context.Context, d *schema.ResourceData, meta
 	}
 
 	userRequest := buildDatadogUserV2UpdateStruct(d, d.Id())
-	updatedUser, httpResponse, err := datadogClientV2.UsersApi.UpdateUser(authV2, d.Id(), *userRequest)
+	updatedUser, httpResponse, err := apiInstances.GetUsersApiV2().UpdateUser(auth, d.Id(), *userRequest)
 	if err != nil {
 		return utils.TranslateClientErrorDiag(err, httpResponse, "error updating user")
 	}
@@ -338,10 +380,10 @@ func resourceDatadogUserUpdate(ctx context.Context, d *schema.ResourceData, meta
 }
 func resourceDatadogUserDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	providerConf := meta.(*ProviderConfiguration)
-	datadogClientV2 := providerConf.DatadogClientV2
-	authV2 := providerConf.AuthV2
+	apiInstances := providerConf.DatadogApiInstances
+	auth := providerConf.Auth
 
-	if httpResponse, err := datadogClientV2.UsersApi.DisableUser(authV2, d.Id()); err != nil {
+	if httpResponse, err := apiInstances.GetUsersApiV2().DisableUser(auth, d.Id()); err != nil {
 		if httpResponse != nil && httpResponse.StatusCode == 404 {
 			return nil
 		}

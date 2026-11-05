@@ -23,15 +23,17 @@ resource "datadog_logs_integration_pipeline" "python" {
 
 ### Optional
 
-- **is_enabled** (Boolean) Boolean value to enable your pipeline.
+- `is_enabled` (Boolean) Boolean value to enable your pipeline.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 # To find the pipeline ID, click the "view" button in the UI to open the pipeline details.

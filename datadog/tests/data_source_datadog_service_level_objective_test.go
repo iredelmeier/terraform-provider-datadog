@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestAccDatadogServiceLevelObjectiveDatasource(t *testing.T) {
@@ -46,6 +46,15 @@ func checkServiceLevelObjectiveDatasourceAttrs(accProvider func() (*schema.Provi
 		testAccCheckDatadogServiceLevelObjectiveExists(accProvider, ""),
 		resource.TestCheckResourceAttr("data.datadog_service_level_objective.foo", "name", uniq),
 		resource.TestCheckResourceAttr("data.datadog_service_level_objective.foo", "type", "metric"),
+		resource.TestCheckResourceAttr("data.datadog_service_level_objective.foo", "description", "some description about foo SLO"),
+		resource.TestCheckResourceAttr("data.datadog_service_level_objective.foo", "target_threshold", "99.5"),
+		resource.TestCheckResourceAttr("data.datadog_service_level_objective.foo", "warning_threshold", "99.8"),
+		resource.TestCheckResourceAttr("data.datadog_service_level_objective.foo", "timeframe", "7d"),
+		resource.TestCheckResourceAttr("data.datadog_service_level_objective.foo", "query.0.numerator", fmt.Sprintf("sum:%s{type:good}.as_count()", uniq)),
+		resource.TestCheckResourceAttr("data.datadog_service_level_objective.foo", "query.0.denominator", "sum:my.metric{*}.as_count()"),
+		resource.TestCheckResourceAttr("data.datadog_service_level_objective.foo", "tags.#", "2"),
+		resource.TestCheckTypeSetElemAttr("data.datadog_service_level_objective.foo", "tags.*", uniq),
+		resource.TestCheckTypeSetElemAttr("data.datadog_service_level_objective.foo", "tags.*", fmt.Sprintf("foo:%s", uniq)),
 	)
 }
 

@@ -15,11 +15,6 @@ Provides a Datadog dashboard_list resource. This can be used to create and manag
 ```terraform
 # Create a new Dashboard List with two Dashboards
 resource "datadog_dashboard_list" "new_list" {
-  depends_on = [
-    datadog_dashboard.screen,
-    datadog_dashboard.time
-  ]
-
   name = "Terraform Created List"
   dash_item {
     type    = "custom_timeboard"
@@ -76,27 +71,29 @@ resource "datadog_dashboard" "screen" {
 
 ### Required
 
-- **name** (String) The name of the Dashboard List
+- `name` (String) The name of the Dashboard List
 
 ### Optional
 
-- **dash_item** (Block Set) A set of dashboard items that belong to this list (see [below for nested schema](#nestedblock--dash_item))
+- `dash_item` (Block Set) A set of dashboard items that belong to this list (see [below for nested schema](#nestedblock--dash_item))
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
 
 <a id="nestedblock--dash_item"></a>
 ### Nested Schema for `dash_item`
 
 Required:
 
-- **dash_id** (String) The ID of the dashboard to add
-- **type** (String) The type of this dashboard. Valid values are `custom_timeboard`, `custom_screenboard`, `integration_screenboard`, `integration_timeboard`, `host_timeboard`.
+- `dash_id` (String) The ID of the dashboard to add
+- `type` (String) The type of this dashboard. Valid values are `custom_timeboard`, `custom_screenboard`, `integration_screenboard`, `integration_timeboard`, `host_timeboard`.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 terraform import datadog_dashboard_list.new_list 123456

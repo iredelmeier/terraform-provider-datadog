@@ -15,8 +15,8 @@ Provides a Datadog [Logs Archive API](https://docs.datadoghq.com/api/v2/logs-arc
 ```terraform
 resource "datadog_logs_archive_order" "sample_archive_order" {
   archive_ids = [
-    "${datadog_logs_archive.sample_archive_1.id}",
-    "${datadog_logs_archive.sample_archive_2.id}"
+    datadog_logs_archive.sample_archive_1.id,
+    datadog_logs_archive.sample_archive_2.id
   ]
 }
 ```
@@ -26,15 +26,17 @@ resource "datadog_logs_archive_order" "sample_archive_order" {
 
 ### Optional
 
-- **archive_ids** (List of String) The archive IDs list. The order of archive IDs in this attribute defines the overall archive order for logs. If `archive_ids` is empty or not specified, it will import the actual archive order, and create the resource. Otherwise, it will try to update the order.
+- `archive_ids` (List of String) The archive IDs list. The order of archive IDs in this attribute defines the overall archive order for logs. If `archive_ids` is empty or not specified, it will import the actual archive order, and create the resource. Otherwise, it will try to update the order.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 # There must be at most one datadog_logs_archive_order resource. You can import the datadog_logs_archive_order or create an archive order.

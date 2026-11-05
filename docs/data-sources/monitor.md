@@ -24,45 +24,50 @@ data "datadog_monitor" "test" {
 
 ### Optional
 
-- **monitor_tags_filter** (List of String) A list of monitor tags to limit the search. This filters on the tags set on the monitor itself.
-- **name_filter** (String) A monitor name to limit the search.
-- **tags_filter** (List of String) A list of tags to limit the search. This filters on the monitor scope.
+- `monitor_tags_filter` (List of String) A list of monitor tags to limit the search. This filters on the tags set on the monitor itself.
+- `name_filter` (String) A monitor name to limit the search.
+- `tags_filter` (List of String) A list of tags to limit the search. This filters on the monitor scope.
 
 ### Read-Only
 
-- **enable_logs_sample** (Boolean) Whether or not a list of log values which triggered the alert is included. This is only used by log monitors.
-- **escalation_message** (String) Message included with a re-notification for this monitor.
-- **evaluation_delay** (Number) Time (in seconds) for which evaluation is delayed. This is only used by metric monitors.
-- **groupby_simple_monitor** (Boolean) Whether or not to trigger one alert if any source breaches a threshold.
-- **id** (String) The ID of this resource.
-- **include_tags** (Boolean) Whether or not notifications from the monitor automatically inserts its triggering tags into the title.
-- **locked** (Boolean) Whether or not changes to the monitor are restricted to the creator or admins.
-- **message** (String) Message included with notifications for this monitor
-- **monitor_threshold_windows** (List of Object) Mapping containing `recovery_window` and `trigger_window` values, e.g. `last_15m`. This is only used by anomaly monitors. (see [below for nested schema](#nestedatt--monitor_threshold_windows))
-- **monitor_thresholds** (List of Object) Alert thresholds of the monitor. (see [below for nested schema](#nestedatt--monitor_thresholds))
-- **name** (String) Name of the monitor
-- **new_group_delay** (Number) Time (in seconds) to skip evaluations for new groups.
-- **new_host_delay** (Number) Time (in seconds) allowing a host to boot and applications to fully start before starting the evaluation of monitor results.
-- **no_data_timeframe** (Number) The number of minutes before the monitor notifies when data stops reporting.
-- **notify_audit** (Boolean) Whether or not tagged users are notified on changes to the monitor.
-- **notify_no_data** (Boolean) Whether or not this monitor notifies when data stops reporting.
-- **query** (String) Query of the monitor.
-- **renotify_interval** (Number) The number of minutes after the last notification before the monitor re-notifies on the current status.
-- **renotify_occurrences** (Number) The number of re-notification messages that should be sent on the current status.
-- **renotify_statuses** (Set of String) The types of statuses for which re-notification messages should be sent. Valid values are `alert`, `warn`, `no data`.
-- **require_full_window** (Boolean) Whether or not the monitor needs a full window of data before it is evaluated.
-- **restricted_roles** (Set of String)
-- **tags** (Set of String) List of tags associated with the monitor.
-- **timeout_h** (Number) Number of hours of the monitor not reporting data before it automatically resolves from a triggered state.
-- **type** (String) Type of the monitor.
+- `enable_logs_sample` (Boolean) Whether or not a list of log values which triggered the alert is included. This is only used by log monitors.
+- `enable_samples` (Boolean) Whether or not a list of samples which triggered the alert is included. This is only used by CI Test and Pipeline monitors.
+- `escalation_message` (String) Message included with a re-notification for this monitor.
+- `evaluation_delay` (Number) Time (in seconds) for which evaluation is delayed. This is only used by metric monitors.
+- `group_retention_duration` (String) The time span after which groups with missing data are dropped from the monitor state. The minimum value is one hour, and the maximum value is 72 hours. Example values are: 60m, 1h, and 2d. This option is only available for APM Trace Analytics, Audit Trail, CI, Error Tracking, Event, Logs, and RUM monitors.
+- `groupby_simple_monitor` (Boolean) Whether or not to trigger one alert if any source breaches a threshold.
+- `id` (String) The ID of this resource.
+- `include_tags` (Boolean) Whether or not notifications from the monitor automatically inserts its triggering tags into the title.
+- `message` (String) Message included with notifications for this monitor
+- `monitor_threshold_windows` (List of Object) Mapping containing `recovery_window` and `trigger_window` values, e.g. `last_15m`. This is only used by anomaly monitors. (see [below for nested schema](#nestedatt--monitor_threshold_windows))
+- `monitor_thresholds` (List of Object) Alert thresholds of the monitor. (see [below for nested schema](#nestedatt--monitor_thresholds))
+- `name` (String) Name of the monitor
+- `new_group_delay` (Number) Time (in seconds) to skip evaluations for new groups.
+- `new_host_delay` (Number) Time (in seconds) allowing a host to boot and applications to fully start before starting the evaluation of monitor results.
+- `no_data_timeframe` (Number) The number of minutes before the monitor notifies when data stops reporting.
+- `notification_preset_name` (String) Toggles the display of additional content sent in the monitor notification. Valid values are: `show_all`, `hide_query`, `hide_handles`, and `hide_all`.
+- `notify_audit` (Boolean) Whether or not tagged users are notified on changes to the monitor.
+- `notify_by` (Set of String) Controls what granularity a monitor alerts on. Only available for monitors with groupings. For instance, a monitor grouped by `cluster`, `namespace`, and `pod` can be configured to only notify on each new `cluster` violating the alert conditions by setting `notify_by` to `['cluster']`. Tags mentioned in `notify_by` must be a proper subset of the grouping tags in the query. For example, a query grouped by `cluster` and `namespace` cannot notify on `region` because `region` is not part of the grouping tags; furthermore, the same query cannot set `notify_by` to `['cluster', 'namespace']` because that is not a proper subset. Setting `notify_by` to `[*]` configures the monitor to notify as a simple-alert.
+- `notify_no_data` (Boolean) Whether or not this monitor notifies when data stops reporting.
+- `on_missing_data` (String) Controls how groups or monitors are treated if an evaluation does not return any data points. The default option results in different behavior depending on the monitor query type. For monitors using `Count` queries, an empty monitor evaluation is treated as 0 and is compared to the threshold conditions. For monitors using any query type other than `Count`, for example `Gauge`, `Measure`, or `Rate`, the monitor shows the last known status. This option is only available for APM Trace Analytics, Audit Trail, CI, Error Tracking, Event, Logs, and RUM monitors. Valid values are: `show_no_data`, `show_and_notify_no_data`, `resolve`, and `default`.
+- `query` (String) Query of the monitor.
+- `renotify_interval` (Number) The number of minutes after the last notification before the monitor re-notifies on the current status.
+- `renotify_occurrences` (Number) The number of re-notification messages that should be sent on the current status.
+- `renotify_statuses` (Set of String) The types of statuses for which re-notification messages should be sent. Valid values are `alert`, `warn`, `no data`.
+- `require_full_window` (Boolean) Whether or not the monitor needs a full window of data before it is evaluated.
+- `restricted_roles` (Set of String)
+- `scheduling_options` (List of Object) Configuration options for scheduling. (see [below for nested schema](#nestedatt--scheduling_options))
+- `tags` (Set of String) List of tags associated with the monitor.
+- `timeout_h` (Number) Number of hours of the monitor not reporting data before it automatically resolves from a triggered state.
+- `type` (String) Type of the monitor.
 
 <a id="nestedatt--monitor_threshold_windows"></a>
 ### Nested Schema for `monitor_threshold_windows`
 
 Read-Only:
 
-- **recovery_window** (String)
-- **trigger_window** (String)
+- `recovery_window` (String)
+- `trigger_window` (String)
 
 
 <a id="nestedatt--monitor_thresholds"></a>
@@ -70,11 +75,46 @@ Read-Only:
 
 Read-Only:
 
-- **critical** (String)
-- **critical_recovery** (String)
-- **ok** (String)
-- **unknown** (String)
-- **warning** (String)
-- **warning_recovery** (String)
+- `critical` (String)
+- `critical_recovery` (String)
+- `ok` (String)
+- `unknown` (String)
+- `warning` (String)
+- `warning_recovery` (String)
 
 
+<a id="nestedatt--scheduling_options"></a>
+### Nested Schema for `scheduling_options`
+
+Read-Only:
+
+- `custom_schedule` (List of Object) (see [below for nested schema](#nestedobjatt--scheduling_options--custom_schedule))
+- `evaluation_window` (List of Object) (see [below for nested schema](#nestedobjatt--scheduling_options--evaluation_window))
+
+<a id="nestedobjatt--scheduling_options--custom_schedule"></a>
+### Nested Schema for `scheduling_options.custom_schedule`
+
+Read-Only:
+
+- `recurrence` (Set of Object) (see [below for nested schema](#nestedobjatt--scheduling_options--custom_schedule--recurrence))
+
+<a id="nestedobjatt--scheduling_options--custom_schedule--recurrence"></a>
+### Nested Schema for `scheduling_options.custom_schedule.recurrence`
+
+Read-Only:
+
+- `rrule` (String)
+- `start` (String)
+- `timezone` (String)
+
+
+
+<a id="nestedobjatt--scheduling_options--evaluation_window"></a>
+### Nested Schema for `scheduling_options.evaluation_window`
+
+Read-Only:
+
+- `day_starts` (String)
+- `hour_starts` (Number)
+- `month_starts` (Number)
+- `timezone` (String)

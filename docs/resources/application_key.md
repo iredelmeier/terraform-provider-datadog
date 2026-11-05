@@ -3,19 +3,32 @@
 page_title: "datadog_application_key Resource - terraform-provider-datadog"
 subcategory: ""
 description: |-
-  Provides a Datadog Application Key resource. This can be used to create and manage Datadog Application Keys.
+  Provides a Datadog Application Key resource. This can be used to create and manage Datadog Application Keys. Import is not supported for this resource. Securely store your application keys using a secret management system or use this resource to create and manage new application keys.
 ---
 
 # datadog_application_key (Resource)
 
-Provides a Datadog Application Key resource. This can be used to create and manage Datadog Application Keys.
+Provides a Datadog Application Key resource. This can be used to create and manage Datadog Application Keys. Import is not supported for this resource. Securely store your application keys using a secret management system or use this resource to create and manage new application keys.
 
 ## Example Usage
 
 ```terraform
-# Create a new Datadog Application Key
-resource "datadog_application_key" "foo" {
-  name = "foo-application"
+# See the permissions available for scoped keys at https://docs.datadoghq.com/account_management/rbac/permissions/#permissions-list
+
+# Create an unrestricted Application Key
+# This key inherits all permissions of the user that owns the key
+resource "datadog_application_key" "unrestricted_key" {
+  name = "Unrestricted Application Key"
+  # scopes unset - inherits all user permissions
+}
+
+# Create a scoped Application Key for monitor management
+resource "datadog_application_key" "monitor_management_key" {
+  name = "Monitor Management Key"
+  scopes = [
+    "monitors_read",
+    "monitors_write"
+  ]
 }
 ```
 
@@ -24,17 +37,13 @@ resource "datadog_application_key" "foo" {
 
 ### Required
 
-- **name** (String) Name for Application Key.
+- `name` (String) Name for Application Key.
+
+### Optional
+
+- `scopes` (Set of String) Authorization scopes for the Application Key. Application Keys configured with no scopes have full access.
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
-- **key** (String, Sensitive) The value of the Application Key.
-
-## Import
-
-Import is supported using the following syntax:
-
-```shell
-terraform import datadog_application_key.foo 11111111-2222-3333-4444-555555555555
-```
+- `id` (String) The ID of this resource.
+- `key` (String, Sensitive) The value of the Application Key.

@@ -4,9 +4,10 @@ go.sum,cloud.google.com/go/bigquery,Apache-2.0,2014 Google LLC
 go.sum,cloud.google.com/go/datastore,Apache-2.0,2014 Google LLC
 go.sum,github.com/BurntSushi/toml,MIT,2013 TOML authors
 go.sum,github.com/BurntSushi/xgb,BSD-3-Clause,2009 The XGB Authors
-go.sum,github.com/DataDog/datadog-api-client-go,Apache-2.0,"2019-Present Datadog, Inc."
+go.sum,github.com/DataDog/datadog-api-client-go/v2,Apache-2.0,"2019-Present Datadog, Inc."
 go.sum,github.com/DataDog/datadog-go,MIT,"2015 Datadog, Inc"
 go.sum,github.com/DataDog/dd-trace-go,Apache-2.0 OR BSD-3-Clause,"2016-Present Datadog, Inc."
+go.sum,github.com/DataDog/zstd,BSD-2-Clause,"2016-Present Datadog, Inc."
 go.sum,github.com/agext/levenshtein,Apache-2.0,2016 ALRUX Inc.
 go.sum,github.com/agl/ed25519,BSD-3-Clause,2012 The Go Authors
 go.sum,github.com/apparentlymart/go-cidr,MIT,2015 Martin Atkins
@@ -15,8 +16,22 @@ go.sum,github.com/apparentlymart/go-textseg,MIT and Apache-2.0 and Unicode-DFS-2
 go.sum,github.com/armon/go-radix,MIT,2014 Armon Dadgar
 go.sum,github.com/aslakhellesoy/gox,MPL-2.0,
 go.sum,github.com/aws/aws-sdk-go,Apache-2.0,2014-2015 Stripe Inc. and 2015 Amazon.com Inc.
+go.sum,github.com/aws/aws-sdk-go-v2,Apache-2.0,"2015 Amazon.com, Inc. or its affiliates; 2014-2015 Stripe, Inc."
+go.sum,github.com/aws/aws-sdk-go-v2/config,Apache-2.0,"Amazon.com, Inc. or its affiliates"
+go.sum,github.com/aws/aws-sdk-go-v2/credentials,Apache-2.0,"Amazon.com, Inc. or its affiliates"
+go.sum,github.com/aws/aws-sdk-go-v2/feature/ec2/imds,Apache-2.0,"Amazon.com, Inc. or its affiliates"
+go.sum,github.com/aws/aws-sdk-go-v2/internal/configsources,Apache-2.0,"Amazon.com, Inc. or its affiliates"
+go.sum,github.com/aws/aws-sdk-go-v2/internal/endpoints/v2,Apache-2.0,"Amazon.com, Inc. or its affiliates"
+go.sum,github.com/aws/aws-sdk-go-v2/internal/ini,Apache-2.0,"Amazon.com, Inc. or its affiliates"
+go.sum,github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding,Apache-2.0,"Amazon.com, Inc. or its affiliates"
+go.sum,github.com/aws/aws-sdk-go-v2/service/internal/presigned-url,Apache-2.0,"Amazon.com, Inc. or its affiliates"
+go.sum,github.com/aws/aws-sdk-go-v2/service/sso,Apache-2.0,"Amazon.com, Inc. or its affiliates"
+go.sum,github.com/aws/aws-sdk-go-v2/service/ssooidc,Apache-2.0,"Amazon.com, Inc. or its affiliates"
+go.sum,github.com/aws/aws-sdk-go-v2/service/sts,Apache-2.0,"Amazon.com, Inc. or its affiliates"
+go.sum,github.com/aws/smithy-go,Apache-2.0,"Amazon.com, Inc. or its affiliates"
 go.sum,github.com/bgentry/go-netrc,MIT,2010 Fazlul Shahriar and 2014 Blake Gentry
 go.sum,github.com/bgentry/speakeasy,MIT,2017 Blake Gentry
+go.sum,github.com/bitfield/gotestdox,MIT,2022 John Arundel
 go.sum,github.com/cenkalti/backoff,MIT,2014 Cenk Altı
 go.sum,github.com/census-instrumentation/opencensus-proto,Apache-2.0,"2019, OpenCensus Authors"
 go.sum,github.com/cheggaaa/pb,BSD-3-Clause,2012-2015 Sergey Cherepanov
@@ -25,10 +40,12 @@ go.sum,github.com/creack/pty,MIT,2011 Keith Rarick
 go.sum,github.com/cucumber/gherkin-go/v13,MIT,Cucumber Ltd and Gaspar Nagy and Björn Rasmusson and Peter Sergeant
 go.sum,github.com/cucumber/messages-go/v12,MIT,Cucumber Ltd
 go.sum,github.com/davecgh/go-spew,ISC,2012-2016 Dave Collins <dave@davec.name>
-go.sum,github.com/dnaeon/go-vcr,BSD-2-Clause,2015-2016 Marin Atanasov Nikolov <dnaeon@gmail.com>
+go.sum,github.com/dnephin/pflag,BSD-3-Clause,2012 The Go Authors and 2012 Alex Ogier
+go.sum,gopkg.in/dnaeon/go-vcr.v3,BSD-2-Clause,2015-2022 Marin Atanasov Nikolov <dnaeon@gmail.com>
 go.sum,github.com/envoyproxy/go-control-plane,Apache-2.0,2018 Envoyproxy Authors
 go.sum,github.com/envoyproxy/protoc-gen-validate,Apache-2.0,2019 Envoy Project Authors
 go.sum,github.com/fatih/color,MIT,2013 Fatih Arslan
+go.sum,github.com/fsnotify/fsnotify,BSD-3-Clause,2012 The Go Authors and fsnotify Authors
 go.sum,github.com/go-bdd/assert,MIT,2020 GoBDD
 go.sum,github.com/go-bdd/gobdd,MIT,2019 Bartłomiej Klimczak
 go.sum,github.com/go-test/deep,MIT,2015-2017 Daniel Nichter
@@ -42,6 +59,7 @@ go.sum,github.com/google/btree,Apache-2.0,2014 Google Inc.
 go.sum,github.com/google/go-cmp,BSD-3-Clause,2017 The Go Authors
 go.sum,github.com/google/martian,Apache-2.0,2015 Google Inc.
 go.sum,github.com/google/pprof,Apache-2.0,2014 Google Inc.
+go.sum,github.com/google/shlex,Apache-2.0,2012 Google Inc.
 go.sum,github.com/google/uuid,BSD-3-Clause,2009-2014 Google Inc.
 go.sum,github.com/googleapis/gax-go/v2,BSD-3-Clause,2016 Google Inc.
 go.sum,github.com/h2non/parth,MIT,2018 codemodus
@@ -118,10 +136,12 @@ go.sum,golang.org/x/net,BSD-3-Clause,2009 The Go Authors
 go.sum,golang.org/x/oauth2,BSD-3-Clause,2009 The Go Authors
 go.sum,golang.org/x/sync,BSD-3-Clause,2009 The Go Authors
 go.sum,golang.org/x/sys,BSD-3-Clause,2019 The Go Authors
+go.sum,golang.org/x/telemetry,BSD-3-Clause,2009 The Go Authors
 go.sum,golang.org/x/text,BSD-3-Clause,2009 The Go Authors
 go.sum,golang.org/x/time,BSD-3-Clause,2019 The Go Authors
 go.sum,golang.org/x/tools,BSD-3-Clause,2019 The Go Authors
 go.sum,golang.org/x/xerrors,BSD-3-Clause,2019 The Go Authors
+go.sum,gonum.org/v1/gonum,BSD-3-Clause,2013 The Gonum Authors
 go.sum,google.golang.org/api,BSD-3-Clause,2011 Google Inc
 go.sum,google.golang.org/appengine,Apache-2.0,Google Inc.
 go.sum,google.golang.org/genproto,Apache-2.0,2018 Google Inc.
@@ -132,6 +152,8 @@ go.sum,gopkg.in/cheggaaa/pb.v1,BSD-3-Clause,2012-2015 Sergey Cherepanov
 go.sum,gopkg.in/h2non/gock.v1,MIT,2016-2019 Tomas Aparicio
 go.sum,gopkg.in/yaml.v2,Apache-2.0,2011-2016 Canonical Ltd.
 go.sum,gotest.tools,Apache-2.0,2018 gotest.tools authors
+go.sum,gotest.tools/gotestsum,Apache-2.0,The gotestsum Authors
+go.sum,gotest.tools/v3,Apache-2.0,2018 gotest.tools authors
 go.sum,honnef.co/go/tools,MIT,2016 Dominik Honnef
 go.sum,rsc.io/binaryregexp,BSD-3-Clause,2009 The Go Authors
 go.sum,cloud.google.com/go/pubsub,Apache-2.0,Copyright 2018 Google LLC
@@ -181,7 +203,6 @@ go.sum,github.com/Masterminds/sprig,MIT,2013-2020 Masterminds
 go.sum,github.com/andybalholm/crlf,BSD-2-Clause,2015 Andy Balholm.
 go.sum,github.com/apparentlymart/go-textseg/v12,MIT,2017 Martin Atkins
 go.sum,github.com/hashicorp/terraform-plugin-docs,MPL-2.0,
-go.sum,github.com/zippolyte/terraform-plugin-docs,MPL-2.0,
 go.sum,github.com/huandu/xstrings,MIT,2015 Huan Du.
 go.sum,github.com/russross/blackfriday,BSD-2-Clause,2011 Russ Ross
 go.sum,github.com/vmihailenco/msgpack/v4,BSD-2-Clause,2013 The github.com/vmihailenco/msgpack Authors.
@@ -209,3 +230,78 @@ go.sum,github.com/google/gofuzz,Apache-2.0,
 go.sum,github.com/hashicorp/hc-install,MPL-2.0,
 go.sum,github.com/hashicorp/terraform-plugin-log,MPL-2.0,
 go.sum,github.com/hashicorp/terraform-registry-address,MPL-2.0,
+go.sum,github.com/Masterminds/semver/v3,MIT,Copyright (C) 2014-2019, Matt Butcher and Matt Farina
+go.sum,github.com/Masterminds/sprig/v3,MIT,Copyright (C) 2013-2020 Masterminds
+go.sum,github.com/antihax/optional,MIT,Copyright (c) 2016 Adam Hintz
+go.sum,github.com/cespare/xxhash/v2,MIT,Copyright (c) 2016 Caleb Spare
+go.sum,github.com/cncf/xds/go,Apache-2.0,
+go.sum,github.com/ghodss/yaml,MIT,Copyright (c) 2014 Sam Ghods
+go.sum,github.com/grpc-ecosystem/grpc-gateway,BSD-3-Clause,Copyright (c) 2015, Gengo, Inc.
+go.sum,github.com/rogpeppe/fastuuid,BSD-3-Clause,Copyright © 2014, Roger Peppe
+go.sum,github.com/shopspring/decimal,MIT,Copyright (c) 2015 Spring, Inc.
+go.sum,github.com/skarimo/terraform-plugin-docs,MPL-2.0,
+go.sum,github.com/spf13/cast,MIT,Copyright (c) 2014 Steve Francia
+go.sum,go.opentelemetry.io/proto/otlp,Apache-2.0,
+go.sum,google.golang.org/grpc/cmd/protoc-gen-go-grpc,Apache-2.0,
+go.sum,github.com/DataDog/zstd,BSD-3-Clause,"2016 Datadog, Inc"
+go.sum,github.com/frankban/quicktest,MIT,Copyright (c) 017 Canonical Ltd.
+go.sum,github.com/hashicorp/terraform-plugin-framework,MPL-2.0,2021 HashiCorp, Inc.
+go.sum,github.com/hashicorp/terraform-plugin-mux,MPL-2.0,2020 HashiCorp, Inc.
+go.sum,github.com/hashicorp/terraform-plugin-framework-validators,MPL-2.0,2020 HashiCorp, Inc.
+go.sum,github.com/bwesterb/go-ristretto,MIT,Copyright (c) 2021 Bas Westerbaan
+go.sum,github.com/cloudflare/circl,,Copyright (c) 2019 Cloudflare
+go.sum,github.com/hashicorp/terraform-plugin-testing,MPL-2.0,Copyright (c) 2014 HashiCorp, Inc.
+go.sum,github.com/pjbgf/sha1cd,Apache-2.0,
+go.sum,github.com/skeema/knownhosts,Apache-2.0,
+go.sum,github.com/vmihailenco/msgpack/v5,BSD 2-Clause,Copyright (c) 2013 The github.com/vmihailenco/msgpack Authors
+go.sum,github.com/vmihailenco/tagparser/v2,BSD 2-Clause,Copyright (c) 2019 The github.com/vmihailenco/tagparser Authors
+go.sum,github.com/goccy/go-json,MIT,2020 Masaaki Goshima
+go.sum,github.com/hashicorp/terraform-plugin-framework-jsontypes,MPL-2.0,Copyright (c) 2023 HashiCorp, Inc.
+go.sum,github.com/hashicorp/terraform-plugin-framework-timetypes,MPL-2.0,Copyright (c) 2023 HashiCorp, Inc.
+go.sum,github.com/bufbuild/protocompile,Apache-2.0,Copyright 2020-2025 Buf Technologies, Inc.
+go.sum,google.golang.org/genproto/googleapis/rpc,Apache-2.0,Apache-2.0,2018 Google Inc.
+go.sum,dario.cat/mergo,BSD-3-Clause,Dario Castañé
+go.sum,github.com/apparentlymart/go-textseg/v15,?,Martin Atkins
+go.sum,github.com/cyphar/filepath-securejoin,BSD-3-Clause
+go.sum,github.com/go-logr/logr,Apache-2.0
+go.sum,github.com/go-logr/stdr,Apache-2.0
+go.sum,github.com/hashicorp/go-retryablehttp,MPL-2.0,HashiCorp, Inc
+go.sum,go.opentelemetry.io/otel,Apache-2.0,The OpenTelemetry Authors
+go.sum,go.opentelemetry.io/otel/metric,Apache-2.0,The OpenTelemetry Authors
+go.sum,go.opentelemetry.io/otel/sdk,Apache-2.0,The OpenTelemetry Authors
+go.sum,go.opentelemetry.io/otel/sdk/metric,Apache-2.0,The OpenTelemetry Authors
+go.sum,go.opentelemetry.io/otel/trace,Apache-2.0,The OpenTelemetry Authors
+go.sum,go.opentelemetry.io/auto/sdk,Apache-2.0,The OpenTelemetry Authors
+go.sum,github.com/Kunde21/markdownfmt/v3,MIT,2014 Dmitri Shuralyov and 2021 Chad Kunde
+go.sum,github.com/bmatcuk/doublestar/v4,MIT,2014 Bob Matcuk
+go.sum,github.com/hashicorp/cli,MPL-2.0,
+go.sum,github.com/yuin/goldmark-meta,MIT,2019 Yusuke Inuzuka
+go.sum,go.abhg.dev/goldmark/frontmatter,BSD-3-Clause,2023 Abhinav Gupta
+go.sum,github.com/pb33f/libopenapi,MIT,2022-Present pb33f / Dave Shanley
+go.sum,github.com/pb33f/jsonpath,MIT,2022-Present pb33f / Dave Shanley
+go.sum,github.com/pb33f/ordered-map/v2,MIT,2022-Present pb33f / Dave Shanley
+go.sum,github.com/spf13/cobra,Apache-2.0,2013 Steve Francia
+go.sum,github.com/bahlo/generic-list-go,MIT,2021 Nils Müller
+go.sum,github.com/buger/jsonparser,MIT,2016 Yuriy Vasiyarov
+go.sum,github.com/inconshreveable/mousetrap,Apache-2.0,2014 Alan Shreve
+go.sum,go.yaml.in/yaml/v4,MIT and Apache-2.0,2006-2011 Kirill Simonov and 2011-2019 Canonical Ltd
+go.sum,go.yaml.in/yaml/v3,MIT and Apache-2.0,2006-2011 Kirill Simonov and 2011-2019 Canonical Ltd
+go.sum,github.com/santhosh-tekuri/jsonschema/v6,Apache-2.0,Santhosh Kumar Tekuri
+go.sum,github.com/dlclark/regexp2,MIT,Doug Clark
+go.sum,github.com/cpuguy83/go-md2man/v2,MIT,2014 Brian Goff
+go.sum,github.com/russross/blackfriday/v2,BSD-2-Clause,2011 Russ Ross
+go.sum,github.com/gkampitakis/ciinfo,MIT,2021 Georgios Kampitakis
+go.sum,github.com/gkampitakis/go-diff,MIT,2012-2016 The go-diff Authors
+go.sum,github.com/gkampitakis/go-snaps,MIT,2021 Georgios Kampitakis
+go.sum,github.com/go-task/slim-sprig/v3,MIT,2013-2020 Masterminds
+go.sum,github.com/goccy/go-yaml,MIT,2019 Masaaki Goshima
+go.sum,github.com/joshdk/go-junit,MIT,Josh Komoroske
+go.sum,github.com/maruel/natural,Apache-2.0,2018 Marc-Antoine Ruel
+go.sum,github.com/mfridman/tparse,MIT,2018 Michael Fridman
+go.sum,github.com/onsi/ginkgo/v2,MIT,2013-2014 Onsi Fakhouri
+go.sum,github.com/onsi/gomega,MIT,2013-2014 Onsi Fakhouri
+go.sum,github.com/tidwall/gjson,MIT,2016 Josh Baker
+go.sum,github.com/tidwall/match,MIT,2016 Josh Baker
+go.sum,github.com/tidwall/pretty,MIT,2017 Josh Baker
+go.sum,github.com/tidwall/sjson,MIT,2016 Josh Baker
+

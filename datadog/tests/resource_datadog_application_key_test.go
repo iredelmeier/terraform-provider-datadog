@@ -3,14 +3,16 @@ package test
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"slices"
+	"strings"
 	"testing"
 
-	"github.com/terraform-providers/terraform-provider-datadog/datadog"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
-	datadogV2 "github.com/DataDog/datadog-api-client-go/api/v2/datadog"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/fwprovider"
+	"github.com/terraform-providers/terraform-provider-datadog/datadog/internal/utils"
 )
 
 func TestAccDatadogApplicationKey_Update(t *testing.T) {
@@ -18,59 +20,90 @@ func TestAccDatadogApplicationKey_Update(t *testing.T) {
 		t.Skip("This test doesn't support recording or replaying")
 	}
 	t.Parallel()
-	ctx, accProviders := testAccProviders(context.Background(), t)
-	accProvider := testAccProvider(t, accProviders)
+	ctx, providers, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
 	applicationKeyName := uniqueEntityName(ctx, t)
 	applicationKeyNameUpdate := applicationKeyName + "-2"
 	resourceName := "datadog_application_key.foo"
+	scopes := []string{"dashboards_read", "dashboards_write"}
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: accProviders,
-		CheckDestroy:      testAccCheckDatadogApplicationKeyDestroy(accProvider),
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
+		CheckDestroy:             testAccCheckDatadogApplicationKeyDestroy(providers.frameworkProvider),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckDatadogApplicationKeyConfigRequired(applicationKeyName),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckDatadogApplicationKeyExists(accProvider, resourceName),
+					testAccCheckDatadogApplicationKeyExists(providers.frameworkProvider, resourceName),
 					resource.TestCheckResourceAttr(resourceName, "name", applicationKeyName),
-					testAccCheckDatadogApplicationKeyValueMatches(accProvider, resourceName),
+					resource.TestCheckResourceAttrSet(resourceName, "key"),
 				),
 			},
 			{
 				Config: testAccCheckDatadogApplicationKeyConfigRequired(applicationKeyNameUpdate),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckDatadogApplicationKeyExists(accProvider, resourceName),
+					testAccCheckDatadogApplicationKeyExists(providers.frameworkProvider, resourceName),
 					resource.TestCheckResourceAttr(resourceName, "name", applicationKeyNameUpdate),
-					testAccCheckDatadogApplicationKeyValueMatches(accProvider, resourceName),
+					testAccCheckDatadogApplicationKeyNameMatches(providers.frameworkProvider, resourceName),
+					resource.TestCheckResourceAttrSet(resourceName, "key"),
+					resource.TestCheckNoResourceAttr(resourceName, "scopes"),
+				),
+			},
+			{
+				Config: testAccCheckDatadogScopedApplicationKeyConfigRequired(applicationKeyNameUpdate, scopes),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckDatadogApplicationKeyExists(providers.frameworkProvider, resourceName),
+					resource.TestCheckResourceAttr(resourceName, "name", applicationKeyNameUpdate),
+					testAccCheckDatadogApplicationKeyNameMatches(providers.frameworkProvider, resourceName),
+					resource.TestCheckResourceAttrSet(resourceName, "key"),
+					testAccCheckDatadogApplicationKeyScopeMatches(providers.frameworkProvider, resourceName, scopes),
 				),
 			},
 		},
 	})
 }
 
-func TestDatadogApplicationKey_import(t *testing.T) {
+func TestAccDatadogApplicationKey_Error(t *testing.T) {
 	if isRecording() || isReplaying() {
 		t.Skip("This test doesn't support recording or replaying")
 	}
 	t.Parallel()
-	resourceName := "datadog_application_key.foo"
-	ctx, accProviders := testAccProviders(context.Background(), t)
+	ctx, _, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
 	applicationKeyName := uniqueEntityName(ctx, t)
-	accProvider := testAccProvider(t, accProviders)
+	applicationKeyNameUpdate := applicationKeyName + "-2"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: accProviders,
-		CheckDestroy:      testAccCheckDatadogApplicationKeyDestroy(accProvider),
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: accProviders,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccCheckDatadogApplicationKeyConfigRequired(applicationKeyName),
+				Config:      testAccCheckDatadogScopedApplicationKeyConfigRequired(applicationKeyNameUpdate, []string{}),
+				ExpectError: regexp.MustCompile(`Attribute scopes set must contain at least 1 elements`),
 			},
 			{
-				ResourceName:      resourceName,
-				ImportState:       true,
-				ImportStateVerify: true,
+				Config:      testAccCheckDatadogScopedApplicationKeyConfigRequired(applicationKeyNameUpdate, []string{"invalid"}),
+				ExpectError: regexp.MustCompile(`Invalid scopes`),
+			},
+		},
+	})
+}
+
+func TestAccDatadogApplicationKey_ImportNotSupported(t *testing.T) {
+	if isRecording() || isReplaying() {
+		t.Skip("This test doesn't support recording or replaying")
+	}
+	t.Parallel()
+	_, _, accProviders := testAccFrameworkMuxProviders(context.Background(), t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: accProviders,
+		Steps: []resource.TestStep{
+			{
+				Config:        `resource "datadog_application_key" "test" { name = "test" }`,
+				ResourceName:  "datadog_application_key.test",
+				ImportState:   true,
+				ImportStateId: "fake-id",
+				ExpectError:   regexp.MustCompile(`Resource Import Not Implemented`),
 			},
 		},
 	})
@@ -83,79 +116,118 @@ resource "datadog_application_key" "foo" {
 }`, uniq)
 }
 
-func testAccCheckDatadogApplicationKeyExists(accProvider func() (*schema.Provider, error), n string) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		datadogClientV2 := providerConf.DatadogClientV2
-		authV2 := providerConf.AuthV2
+func testAccCheckDatadogScopedApplicationKeyConfigRequired(uniq string, scopes []string) string {
+	formattedScopes := ""
+	if len(scopes) == 0 {
+		formattedScopes = "[]"
+	} else {
+		formattedScopes = fmt.Sprintf("[\"%s\"]", strings.Join(scopes, "\", \""))
+	}
 
-		if err := datadogApplicationKeyExistsHelper(authV2, s, datadogClientV2, n); err != nil {
+	return fmt.Sprintf(`
+resource "datadog_application_key" "foo" {
+  name = "%s"
+  scopes = %s
+}`, uniq, formattedScopes)
+}
+
+func testAccCheckDatadogApplicationKeyExists(accProvider *fwprovider.FrameworkProvider, n string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		apiInstances := accProvider.DatadogApiInstances
+		auth := accProvider.Auth
+
+		if err := datadogApplicationKeyExistsHelper(auth, s, apiInstances, n); err != nil {
 			return err
 		}
 		return nil
 	}
 }
 
-func datadogApplicationKeyExistsHelper(ctx context.Context, s *terraform.State, client *datadogV2.APIClient, name string) error {
+func datadogApplicationKeyExistsHelper(ctx context.Context, s *terraform.State, apiInstances *utils.ApiInstances, name string) error {
 	id := s.RootModule().Resources[name].Primary.ID
-	if _, _, err := client.KeyManagementApi.GetCurrentUserApplicationKey(ctx, id); err != nil {
+	if _, _, err := apiInstances.GetKeyManagementApiV2().GetCurrentUserApplicationKey(ctx, id); err != nil {
 		return fmt.Errorf("received an error retrieving application key %s", err)
 	}
 	return nil
 }
 
-func testAccCheckDatadogApplicationKeyValueMatches(accProvider func() (*schema.Provider, error), n string) resource.TestCheckFunc {
+func testAccCheckDatadogApplicationKeyNameMatches(accProvider *fwprovider.FrameworkProvider, n string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		datadogClientV2 := providerConf.DatadogClientV2
-		authV2 := providerConf.AuthV2
-
-		if err := datadogApplicationKeyValueMatches(authV2, s, datadogClientV2, n); err != nil {
+		apiInstances := accProvider.DatadogApiInstances
+		auth := accProvider.Auth
+		if err := datadogApplicationKeyNameMatches(auth, s, apiInstances, n); err != nil {
 			return err
 		}
 		return nil
 	}
 }
 
-func datadogApplicationKeyValueMatches(ctx context.Context, s *terraform.State, client *datadogV2.APIClient, name string) error {
+func datadogApplicationKeyNameMatches(ctx context.Context, s *terraform.State, apiInstances *utils.ApiInstances, name string) error {
 	primaryResource := s.RootModule().Resources[name].Primary
 	id := primaryResource.ID
-	expectedKey := primaryResource.Attributes["key"]
-	resp, _, err := client.KeyManagementApi.GetCurrentUserApplicationKey(ctx, id)
+	resp, _, err := apiInstances.GetKeyManagementApiV2().GetCurrentUserApplicationKey(ctx, id)
 	if err != nil {
 		return fmt.Errorf("received an error retrieving application key %s", err)
 	}
-	actualKey := resp.Data.Attributes.GetKey()
-	if expectedKey != actualKey {
-		return fmt.Errorf("application key value does not match")
+	keyName := resp.Data.Attributes.GetName()
+	stateKeyName := primaryResource.Attributes["name"]
+	if keyName != stateKeyName {
+		return fmt.Errorf("application key name %s in state does not match expected name %s from API", stateKeyName, keyName)
 	}
 	return nil
 }
 
-func testAccCheckDatadogApplicationKeyDestroy(accProvider func() (*schema.Provider, error)) func(*terraform.State) error {
+func testAccCheckDatadogApplicationKeyScopeMatches(accProvider *fwprovider.FrameworkProvider, n string, scopes []string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		provider, _ := accProvider()
-		providerConf := provider.Meta().(*datadog.ProviderConfiguration)
-		datadogClientV2 := providerConf.DatadogClientV2
-		authV2 := providerConf.AuthV2
-
-		if err := datadogApplicationKeyDestroyHelper(authV2, s, datadogClientV2); err != nil {
+		apiInstances := accProvider.DatadogApiInstances
+		auth := accProvider.Auth
+		if err := datadogApplicationKeyScopeMatches(auth, s, apiInstances, n, scopes); err != nil {
 			return err
 		}
 		return nil
 	}
 }
 
-func datadogApplicationKeyDestroyHelper(ctx context.Context, s *terraform.State, client *datadogV2.APIClient) error {
+func datadogApplicationKeyScopeMatches(ctx context.Context, s *terraform.State, apiInstances *utils.ApiInstances, name string, expectedScopes []string) error {
+	primaryResource := s.RootModule().Resources[name].Primary
+	id := primaryResource.ID
+	resp, _, err := apiInstances.GetKeyManagementApiV2().GetCurrentUserApplicationKey(ctx, id)
+	if err != nil {
+		return fmt.Errorf("received an error retrieving application key %s", err)
+	}
+	appKeyScopes := resp.Data.Attributes.GetScopes()
+	if len(appKeyScopes) != len(expectedScopes) {
+		return fmt.Errorf("application key scopes %s in state do not match expected scopes list %s from API", appKeyScopes, expectedScopes)
+	}
+	for _, scope := range appKeyScopes {
+		if !slices.Contains(expectedScopes, scope) {
+			return fmt.Errorf("application key scope %s in state not in expected scopes list %s from API", scope, expectedScopes)
+		}
+	}
+
+	return nil
+}
+
+func testAccCheckDatadogApplicationKeyDestroy(accProvider *fwprovider.FrameworkProvider) func(*terraform.State) error {
+	return func(s *terraform.State) error {
+		apiIntances := accProvider.DatadogApiInstances
+		auth := accProvider.Auth
+
+		if err := datadogApplicationKeyDestroyHelper(auth, s, apiIntances); err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
+func datadogApplicationKeyDestroyHelper(ctx context.Context, s *terraform.State, apiInstances *utils.ApiInstances) error {
 	for _, r := range s.RootModule().Resources {
 		if r.Type != "datadog_application_key" {
 			continue
 		}
 
 		id := r.Primary.ID
-		_, httpResponse, err := client.KeyManagementApi.GetCurrentUserApplicationKey(ctx, id)
+		_, httpResponse, err := apiInstances.GetKeyManagementApiV2().GetCurrentUserApplicationKey(ctx, id)
 
 		if err != nil {
 			if httpResponse.StatusCode == 404 {

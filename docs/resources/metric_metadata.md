@@ -17,7 +17,7 @@ Provides a Datadog metric_metadata resource. This can be used to manage a metric
 resource "datadog_metric_metadata" "request_time" {
   metric      = "request.time"
   short_name  = "Request time"
-  description = "99th percentile request time in millseconds"
+  description = "99th percentile request time in milliseconds"
   type        = "gauge"
   unit        = "millisecond"
 }
@@ -28,19 +28,27 @@ resource "datadog_metric_metadata" "request_time" {
 
 ### Required
 
-- **metric** (String) The name of the metric.
+- `metric` (String) The name of the metric.
 
 ### Optional
 
-- **description** (String) A description of the metric.
-- **per_unit** (String) Per unit of the metric such as `second` in `bytes per second`.
-- **short_name** (String) A short name of the metric.
-- **statsd_interval** (Number) If applicable, statsd flush interval in seconds for the metric.
-- **type** (String) Type of the metric.
-- **unit** (String) Primary unit of the metric such as `byte` or `operation`.
+- `description` (String) A description of the metric.
+- `per_unit` (String) Per unit of the metric such as `second` in `bytes per second`.
+- `short_name` (String) A short name of the metric.
+- `statsd_interval` (Number) If applicable, statsd flush interval in seconds for the metric.
+- `type` (String) Metric type such as `count`, `distribution`, `gauge`, or `rate`.
+- `unit` (String) Primary unit of the metric such as `byte` or `operation`. For a list of allowed units, refer to [Datadog metric unit documentation](https://docs.datadoghq.com/metrics/units/#unit-list).
 
 ### Read-Only
 
-- **id** (String) The ID of this resource.
+- `id` (String) The ID of this resource.
 
+## Import
 
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+terraform import datadog_metric_metadata.request_time request.time
+```

@@ -3,12 +3,12 @@
 page_title: "datadog_api_key Data Source - terraform-provider-datadog"
 subcategory: ""
 description: |-
-  Use this data source to retrieve information about an existing api key.
+  Use this data source to retrieve information about an existing api key. Deprecated. This will be removed in a future release with prior notice. Securely store your API keys using a secret management system or use the datadog_api_key resource to manage API keys in your Datadog account.
 ---
 
 # datadog_api_key (Data Source)
 
-Use this data source to retrieve information about an existing api key.
+Use this data source to retrieve information about an existing api key. Deprecated. This will be removed in a future release with prior notice. Securely store your API keys using a secret management system or use the datadog_api_key resource to manage API keys in your Datadog account.
 
 ## Example Usage
 
@@ -23,11 +23,11 @@ data "datadog_api_key" "foo" {
 
 ### Optional
 
-- **id** (String) Id for API Key.
-- **name** (String) Name for API Key.
+- `exact_match` (Boolean) Whether to use exact match when searching by name.
+- `id` (String) The ID of this resource.
+- `name` (String) Name for API Key.
 
 ### Read-Only
 
-- **key** (String, Sensitive) The value of the API Key.
-
-
+- `key` (String, Sensitive) The value of the API Key.
+- `remote_config_read_enabled` (Boolean) Whether the API key is used for remote config.
